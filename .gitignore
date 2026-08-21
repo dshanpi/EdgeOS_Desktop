@@ -1,0 +1,33 @@
+# Application build output
+build/
+k230_bin/
+
+# C/C++ and CMake intermediates
+*.o
+*.obj
+*.d
+*.dep
+*.elf.map
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Generated local packages and logs
+*.img
+*.img.gz
+*.kdimg
+*.kdimg.gz
+*.md5
+*.sha256
+log.txt
+
+# Editor, OS and language caches
+.cache/
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+.DS_Store

@@ -1,0 +1,6 @@
+config APP_ENABLE_LVGL_LAUNCHER
+    bool "Enable DongshanPI AI model application"
+    default n
+    depends on RTSMART_3RD_PARTY_ENABLE_LVGL
+    help
+        Build the DongshanPI 640x480 ST7701 AI model application.

@@ -1,0 +1,206 @@
+if RTSMART_AI_EXAMPLES_ENABLE_AI_DEMO
+
+    config RTSMART_AI_EXAMPLES_ANOMALY_DET
+        bool "Anomaly det Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_BYTETRACK
+        bool "Bytetrack Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_CROSSWALK_DETECT
+        bool "Crosswalk detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_DISTRACTION_REMINDER
+        bool "Distraction reminder Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_DMS_SYSTEM
+        bool "Dms system Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_DYNAMIC_GESTURE
+        bool "Dynamic gesture Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_EYE_GAZE
+        bool "Eye gaze Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_ALIGNMENT
+        bool "Face alignment Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_DETECTION
+        bool "Face detection Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_EMOTION
+        bool "Face emotion Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_GENDER
+        bool "Face gender Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_GLASSES
+        bool "Face glasses Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_LANDMARK
+        bool "Face landmark Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_MASK
+        bool "Face mask Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_MESH
+        bool "Face mesh Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_PARSE
+        bool "Face parse Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_POSE
+        bool "Face pose Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FACE_VERIFICATION
+        bool "Face verification Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FALLDOWN_DETECT
+        bool "Falldown detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FINGER_GUESSING
+        bool "Finger guessing Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_FITNESS
+        bool "Fitness Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_HEAD_DETECTION
+        bool "Head detection Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_HELMET_DETECT
+        bool "Helmet detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_KWS
+        bool "Kws Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_LICENCE_DET
+        bool "Licence det Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_LICENCE_DET_REC
+        bool "Licence det rec Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_NANOTRACKER
+        bool "Nanotracker Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_OBJECT_DETECT_YOLOV8N
+        bool "Object detect yolov8n Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_OCR
+        bool "Ocr Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_PERSON_ATTR
+        bool "Person attr Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_PERSON_DETECT
+        bool "Person detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_PERSON_DISTANCE
+        bool "Person distance Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_POSE_DETECT
+        bool "Pose detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_PPHUMANSEG
+        bool "Pphumanseg Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_PUZZLE_GAME
+        bool "Puzzle game Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SEGMENT_YOLOV8N
+        bool "Segment yolov8n Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SELF_LEARNING
+        bool "Self learning Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SMOKE_DETECT
+        bool "Smoke detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SPACE_RESIZE
+        bool "Space resize Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HAND_DET
+        bool "Sq hand det Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HANDKP_CLASS
+        bool "Sq handkp class Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HANDKP_DET
+        bool "Sq handkp det Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HANDKP_FLOWER
+        bool "Sq handkp flower Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HANDKP_OCR
+        bool "Sq handkp ocr Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_SQ_HANDRECO
+        bool "Sq handreco Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_TRAFFIC_LIGHT_DETECT
+        bool "Traffic light detect Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_TRANSLATE_EN_CH
+        bool "Translate en ch Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_TTS_ZH
+        bool "Tts zh Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_VEHICLE_ATTR
+        bool "Vehicle attr Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_VIRTUAL_KEYBOARD
+        bool "Virtual keyboard Example"
+        default n
+
+    config RTSMART_AI_EXAMPLES_YOLOP_LANE_SEG
+        bool "Yolop lane seg Example"
+        default n    
+endif

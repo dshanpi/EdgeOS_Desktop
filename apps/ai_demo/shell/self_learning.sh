@@ -1,0 +1,1 @@
+./self_learning.elf recognition.kmodel 0.5 3 0
