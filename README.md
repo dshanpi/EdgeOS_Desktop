@@ -45,6 +45,10 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 - HTTPS、签名清单、包摘要校验和 A/B 分区保护的 OTA 客户端
 - 针对触屏滚动、弹层生命周期、摄像头资源切换和异常恢复的专门处理
 
+## VAXP Host SDK
+
+如需在外部主机上接收并解析 EdgeOS Desktop 通过 UART 输出的 VAXP 协议数据，请参考独立项目 [dshanpi/vaxp-host-sdk](https://github.com/dshanpi/vaxp-host-sdk)。该项目提供 Linux MPU 和 STM32 MCU 两套示例程序，以及对应的编译、烧录、波特率配置和 API 使用说明。
+
 ## 硬件与软件环境
 
 | 项目 | 说明 |

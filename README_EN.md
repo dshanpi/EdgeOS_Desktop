@@ -45,6 +45,10 @@ All screenshots below were captured from a running development board. Click an i
 - HTTPS OTA client with signed manifests, package digest verification, and A/B partition protection
 - Dedicated handling for touch scrolling, overlay lifetime, camera resource transfer, and error recovery
 
+## VAXP Host SDK
+
+To receive and parse VAXP protocol data exported by EdgeOS Desktop over UART, see the standalone [dshanpi/vaxp-host-sdk](https://github.com/dshanpi/vaxp-host-sdk) project. It provides examples for Linux MPUs and STM32 MCUs, together with build, flashing, baud-rate configuration, and API usage instructions.
+
 ## Hardware and software environment
 
 | Item | Description |
