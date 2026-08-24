@@ -60,6 +60,7 @@ To receive and parse VAXP protocol data exported by EdgeOS Desktop over UART, se
 | UI framework | LVGL |
 | AI runtime | nncase / KPU, depending on the application |
 | Toolchain | RISC-V musl cross toolchain supplied with the CanMV K230 SDK |
+| Storage | At least an 8 GB microSD; free space in `/data` must exceed the OTA KDIMG before updating |
 
 This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase, OpenCV, and image-generation tools supplied by the CanMV K230 SDK. The VAXP protocol headers are bundled in `third_party/vaxp/include/`; the build no longer relies on local files outside this repository. It cannot be built or run as a standalone Linux desktop application.
 

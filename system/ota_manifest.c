@@ -13,13 +13,11 @@
 #include <string.h>
 #include <strings.h>
 
-#define OTA_PRODUCT_NAME "DshanPI_CanMV_V3"
 #define OTA_BOARD_NAME "k230_canmv_dongshanpi"
 #define OTA_CHANNEL_NAME "stable"
 #define OTA_DOWNLOAD_HOST "dl.100ask.net"
 #define OTA_DOWNLOAD_PREFIX "/Hardware/MPU/DshanPIxCanMV/V3/OTA/"
 #define OTA_PACKAGE_MIN_SIZE (64u * 1024u)
-#define OTA_PACKAGE_MAX_SIZE (640u * 1024u * 1024u)
 
 typedef struct {
     uint16_t part[4];
@@ -419,7 +417,7 @@ int ota_manifest_verify_and_parse(const unsigned char *json, size_t json_size,
     signature_object = required_item(root, "signature");
 
     if (!cJSON_IsNumber(schema) || schema->valuedouble != 1.0 ||
-        product == NULL || strcmp(product, OTA_PRODUCT_NAME) != 0 ||
+        product == NULL || strcmp(product, DSHANPI_OTA_PRODUCT_NAME) != 0 ||
         board == NULL || strcmp(board, OTA_BOARD_NAME) != 0 ||
         channel == NULL || strcmp(channel, OTA_CHANNEL_NAME) != 0 ||
         version_text == NULL || published_at == NULL ||
@@ -463,7 +461,7 @@ int ota_manifest_verify_and_parse(const unsigned char *json, size_t json_size,
         goto done;
     }
     if (snprintf(expected_filename, sizeof(expected_filename), "%s_%s_ota.kdimg",
-                 OTA_PRODUCT_NAME, version_text) <= 0 ||
+                 DSHANPI_OTA_PRODUCT_NAME, version_text) <= 0 ||
         strcmp(filename, expected_filename) != 0) {
         manifest_error(error, error_size, "OTA filename does not match version");
         goto done;
@@ -480,7 +478,7 @@ int ota_manifest_verify_and_parse(const unsigned char *json, size_t json_size,
 
     size_value = size_item->valuedouble;
     if (size_value < (double)OTA_PACKAGE_MIN_SIZE ||
-        size_value > (double)OTA_PACKAGE_MAX_SIZE) {
+        size_value > (double)DSHANPI_OTA_PACKAGE_MAX_SIZE) {
         manifest_error(error, error_size, "OTA artifact size is out of range");
         goto done;
     }

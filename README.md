@@ -60,6 +60,7 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 | UI | LVGL |
 | AI 运行时 | nncase / KPU，依具体子应用而定 |
 | 工具链 | CanMV K230 SDK 配套的 RISC-V musl 交叉工具链 |
+| 存储 | 至少 8 GB microSD；OTA 前 `/data` 可用空间须大于 OTA KDIMG |
 
 本仓库依赖 CanMV K230 SDK 提供的 LVGL、MPP、RT-Smart HAL、Mbed TLS、cJSON、nncase、OpenCV 和固件打包工具。VAXP 协议头文件已随仓库放在 `third_party/vaxp/include/`，不再依赖 SDK 目录之外的本地文件。单独克隆本仓库不能在普通 Linux 主机上直接构建或运行桌面程序。
 

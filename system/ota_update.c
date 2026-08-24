@@ -29,7 +29,7 @@
 #define OTA_ALLOWED_MANIFEST_PATH                                                \
     "/Hardware/MPU/DshanPIxCanMV/V3/OTA/latest.json"
 #define OTA_IO_CHUNK (64u * 1024u)
-#define OTA_MAX_DOWNLOAD (640u * 1024u * 1024u)
+#define OTA_MAX_DOWNLOAD DSHANPI_OTA_PACKAGE_MAX_SIZE
 #define OTA_MANIFEST_MAX (16u * 1024u)
 #define OTA_SIGNATURE_MAX 80u
 #define OTA_MANIFEST_RETRIES 3u
