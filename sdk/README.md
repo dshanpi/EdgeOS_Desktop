@@ -23,7 +23,7 @@ manifest:
 ```bash
 mkdir canmv_k230 && cd canmv_k230
 repo init -u https://github.com/dshanpi/EdgeOS_Desktop.git \
-  -b edgeos-sdk-v1.0.0 \
+  -b refs/tags/edgeos-sdk-v1.0.0 \
   -m sdk/manifests/upstream-lock.xml
 repo sync -c -j"$(nproc)"
 
