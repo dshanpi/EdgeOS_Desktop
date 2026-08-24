@@ -8,7 +8,7 @@ include_directories(${mpp}/userapps/api ${mpp}/include ${mpp}/include/comm
     ../../../../rtsmart/libs/rtsmart_hal/utils)
 link_directories(${mpp}/userapps/lib)
 add_executable(uvc_camera.elf
-    ../../../../rtsmart/examples/mpp/sample_uvc_host/uvc_test.c
+    src/uvc_test.c
     ../../../../rtsmart/libs/rtsmart_hal/utils/hal_rvv_ops.c
     ../face_studio/src/drv_touch.c)
 target_compile_definitions(uvc_camera.elf PRIVATE DSHANPI_UVC_APP=1)
