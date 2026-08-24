@@ -116,16 +116,23 @@ git lfs install
 git clone https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 git lfs pull
+git lfs fsck
 ```
 
 `.gitattributes` routes common binary resources through Git LFS. Build directories, `k230_bin/`, firmware images, and compiler intermediates are excluded from version control.
 
-## Integrating with the CanMV K230 SDK
+Clone `main` when browsing development sources. Firmware builds must pin both the SDK manifest and the application tag; do not combine a moving `main` with an arbitrary "latest" SDK.
+
+## Building under rtos_k230 / the CanMV K230 SDK
+
+The complete user workflow is in [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md); the Chinese guide is [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md). It covers host dependencies, the locked SDK checkout, toolchains, Git LFS, Scheme A, configuration, the full build, artifact checks, and troubleshooting. The project has completed an end-to-end build in a workspace actually named `rtos_k230`; see [`docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md`](docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md).
+
+`rtos_k230` and `canmv_k230` are only local directory names. When the SDK comes from this project's 24-project lock, the build target remains `k230_canmv_dongshanpi_edgeos_defconfig`.
 
 Place the repository directly under the SDK application directory:
 
 ```text
-canmv_k230/
+rtos_k230/                      # It may also be named canmv_k230
 └── src/applications/EdgeOS_Desktop/
     ├── apps/
     ├── middleware/
@@ -137,17 +144,24 @@ canmv_k230/
 For example:
 
 ```bash
-cd /path/to/canmv_k230/src/applications
-git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+(
+set -e
+cd /path/to/rtos_k230/src/applications
+git clone --branch edgeos-sdk-v1.0.0 \
+  https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
+test "$(git rev-parse HEAD)" = "18df75d569bd5ecdfd8ccec8d37bf343e530533d"
 git lfs pull
+git lfs fsck
 ./tools/apply_sdk_patches.sh --check
 ./tools/apply_sdk_patches.sh --apply
 ./tools/integrate_canmv_sdk.sh
 cd ../../..
+make dl_toolchain
 make k230_canmv_dongshanpi_edgeos_defconfig
 ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
+)
 ```
 
 The dedicated `k230_canmv_dongshanpi_edgeos_defconfig` enables `DshanPI EdgeOS Desktop` automatically, so no manual configuration is required. Run `make menuconfig` separately only when you want to inspect or adjust features; the application will appear under `Applications Configuration`. The SDK discovers the menu entry from this repository's Kconfig, while the integration script idempotently updates the parent `apps.mk` according to the checkout directory name and maps the option to the actual build directory. Menu discovery and build registration are separate, so run the integration script again in a new SDK checkout or after resetting `apps.mk`.
@@ -158,10 +172,11 @@ The repository must be a direct child of `src/applications/`, but its directory 
 
 EdgeOS Desktop does not depend on WebRTC. The dedicated defconfig disables it so the product does not pull in unrelated dependencies; features such as Mbed TLS for OTA remain enabled.
 
-Sub-application build scripts look for the toolchain under `$HOME/.kendryte/k230_toolchains/` by default. If the toolchain is installed elsewhere, point `K230_TOOLCHAIN_BIN` at its `bin` directory:
+On a fresh host, run `make dl_toolchain` from the SDK root first. The top-level SDK Makefiles use `SDK_TOOLCHAIN_DIR` as the toolchain root, while standalone EdgeOS sub-application scripts use `K230_TOOLCHAIN_BIN` as the musl toolchain `bin` directory. Both default below `$HOME/.kendryte/k230_toolchains/`; for a non-default installation:
 
 ```bash
-export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
+export SDK_TOOLCHAIN_DIR=/opt/k230_toolchains
+export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin"
 ```
 
 ## Building firmware
@@ -169,7 +184,7 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 After applying the SDK patches, integrating the application, selecting the dedicated defconfig, and passing the compatibility check above, build from the SDK root (skip this if you already ran the final command in the previous block):
 
 ```bash
-cd /path/to/canmv_k230
+cd /path/to/rtos_k230
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
@@ -191,6 +206,8 @@ output/k230_canmv_dongshanpi_edgeos_defconfig/
 ```
 
 The current product version is `v0.7.5`. It is maintained centrally in the SDK board file `boards/k230_canmv_dongshanpi/system-version.txt`; do not maintain another version string in the UI or packaging scripts.
+
+After the full build, run `tools/check_sdk_compat.sh` again with the cross `nm` explicitly selected so the generated player archive ABI is checked. The complete command and the measured artifact sizes, SHA-256 values, and partition table are in the `rtos_k230` build guide and validation record.
 
 ### Building the application only
 

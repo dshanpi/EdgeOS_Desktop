@@ -1,4 +1,4 @@
-06a36887f95b6b7e86a3b7c7f58fee2e919fdfa03e15ee85826e9740a119daeb  sdk/README.md
+03629ed6d96cee46e9f0cc35cf00f8f707949c82df6331e33489bbb1d828762b  sdk/README.md
 bca7a56ac897d094c16be3c3c6745c34e1a2445df0ab4ffe4ca11c00deca96f5  sdk/manifest.json
 b7c2de6681fa71e1018e323bad57e57523a486d02c3c6e3879e00389ff91f966  sdk/manifests/upstream-lock.xml
 1ab6c4419a51690164598ef433b11f1f8b26e3d6f81e96a05e363c5e55533d7b  sdk/patches/lvgl/0001-feat-tjpgd-enable-native-thumbnail-scaling.patch

@@ -116,16 +116,23 @@ git lfs install
 git clone https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 git lfs pull
+git lfs fsck
 ```
 
 `.gitattributes` 已为常见二进制资源启用 Git LFS。`build/`、`k230_bin/`、固件镜像和编译中间文件不会进入版本库。
 
-## 集成到 CanMV K230 SDK
+仅浏览开发代码时可以克隆 `main`；用于生成固件时必须同时固定 SDK 清单和应用标签。不要把浮动 `main` 与任意“最新版”SDK 混合构建。
+
+## 在 rtos_k230 / CanMV K230 SDK 中构建
+
+面向普通用户的完整流程见 [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md)，英文版见 [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md)。指南包含主机依赖、锁定 SDK 检出、工具链、Git LFS、方案 A、配置、全量构建、产物检查和故障排查。本项目已在实际名为 `rtos_k230` 的工作区完成端到端验证；记录见 [`docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md`](docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md)。
+
+`rtos_k230` 和 `canmv_k230` 只是本地目录名。只要 SDK 来自本项目的 24 项锁定清单，构建目标仍然是 `k230_canmv_dongshanpi_edgeos_defconfig`。
 
 推荐将仓库直接放在 SDK 的应用目录中：
 
 ```text
-canmv_k230/
+rtos_k230/                      # 也可以命名为 canmv_k230
 └── src/applications/EdgeOS_Desktop/
     ├── apps/
     ├── middleware/
@@ -137,17 +144,24 @@ canmv_k230/
 例如：
 
 ```bash
-cd /path/to/canmv_k230/src/applications
-git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+(
+set -e
+cd /path/to/rtos_k230/src/applications
+git clone --branch edgeos-sdk-v1.0.0 \
+  https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
+test "$(git rev-parse HEAD)" = "18df75d569bd5ecdfd8ccec8d37bf343e530533d"
 git lfs pull
+git lfs fsck
 ./tools/apply_sdk_patches.sh --check
 ./tools/apply_sdk_patches.sh --apply
 ./tools/integrate_canmv_sdk.sh
 cd ../../..
+make dl_toolchain
 make k230_canmv_dongshanpi_edgeos_defconfig
 ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
+)
 ```
 
 专用配置 `k230_canmv_dongshanpi_edgeos_defconfig` 会自动启用 `DshanPI EdgeOS Desktop`，无需再手工修改配置。需要检查或调整功能时可另外执行 `make menuconfig`；此时应用会显示在 `Applications Configuration` 下。SDK 从本仓库的 Kconfig 发现菜单项，集成脚本则根据当前目录名幂等更新父目录的 `apps.mk`，将该选项映射到实际构建目录。菜单发现和参与构建是两个独立步骤，因此在新的 SDK 中或重置 `apps.mk` 后需要重新运行集成脚本。
@@ -158,10 +172,11 @@ bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 
 EdgeOS Desktop 不依赖 WebRTC，专用 defconfig 已将其禁用，以免引入与本产品无关的依赖；OTA 使用的 Mbed TLS 等功能仍会正常启用。
 
-子应用构建脚本默认从 `$HOME/.kendryte/k230_toolchains/` 查找工具链。如工具链安装在其他位置，请将其 `bin` 目录通过 `K230_TOOLCHAIN_BIN` 指定：
+全新主机应先在 SDK 根目录运行 `make dl_toolchain`。SDK 顶层 Makefile 使用 `SDK_TOOLCHAIN_DIR` 作为工具链根目录，EdgeOS 独立子应用脚本使用 `K230_TOOLCHAIN_BIN` 作为 musl 工具链的 `bin` 目录。默认都位于 `$HOME/.kendryte/k230_toolchains/`；非默认安装示例：
 
 ```bash
-export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
+export SDK_TOOLCHAIN_DIR=/opt/k230_toolchains
+export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin"
 ```
 
 ## 构建固件
@@ -169,7 +184,7 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 完成上一节的 SDK 补丁、集成、专用 defconfig 和兼容性检查后，在 SDK 根目录构建（如果已经执行了上一节命令块的最后一行，则无需重复）：
 
 ```bash
-cd /path/to/canmv_k230
+cd /path/to/rtos_k230
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
@@ -191,6 +206,8 @@ output/k230_canmv_dongshanpi_edgeos_defconfig/
 ```
 
 当前产品版本为 `v0.7.5`，由 SDK 板级文件 `boards/k230_canmv_dongshanpi/system-version.txt` 统一管理，不应在 UI 或发布脚本中重复维护。
+
+全量构建后应再次运行 `tools/check_sdk_compat.sh` 并显式提供交叉 `nm`，以检查生成的播放器静态库 ABI；完整命令和本次产物大小、SHA-256、分区表见 `rtos_k230` 构建指南和验证记录。
 
 ### 仅构建应用
 

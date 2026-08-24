@@ -9,6 +9,14 @@ change is reviewable and reproducible from an official CanMV K230 baseline.
 改动保持分离；任何人都可以从公开仓库取得应用，并从官方 CanMV K230 基线
 可复现地重建同一组 SDK 源码树。
 
+For an end-user walkthrough, including host packages, toolchains, artifact
+checks, and troubleshooting, use
+[`../docs/BUILD_RTOS_K230_EN.md`](../docs/BUILD_RTOS_K230_EN.md). 中文用户请参阅
+[`../docs/BUILD_RTOS_K230.md`](../docs/BUILD_RTOS_K230.md)。
+The SDK root may be
+named `rtos_k230` or `canmv_k230`; the directory name does not change the
+manifest or build target.
+
 ## Fresh checkout / 全新检出
 
 The safest workflow uses the EdgeOS release tag itself as the repo manifest
@@ -21,17 +29,24 @@ manifest:
 里的浮动分支：
 
 ```bash
-mkdir canmv_k230 && cd canmv_k230
+(
+set -e
+mkdir "$HOME/rtos_k230" &&
+cd "$HOME/rtos_k230" &&
 repo init -u https://github.com/dshanpi/EdgeOS_Desktop.git \
   -b refs/tags/edgeos-sdk-v1.0.0 \
-  -m sdk/manifests/upstream-lock.xml
+  -m sdk/manifests/upstream-lock.xml \
+  --repo-url=https://github.com/canmv-k230/git-repo.git &&
 repo sync -c -j"$(nproc)"
+make dl_toolchain
 
 cd src/applications
 git clone --branch edgeos-sdk-v1.0.0 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
+test "$(git rev-parse HEAD)" = "18df75d569bd5ecdfd8ccec8d37bf343e530533d"
 git lfs pull
+git lfs fsck
 ./tools/apply_sdk_patches.sh --check
 ./tools/apply_sdk_patches.sh --apply
 ./tools/integrate_canmv_sdk.sh
@@ -40,6 +55,9 @@ cd ../../..
 make k230_canmv_dongshanpi_edgeos_defconfig
 ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
+K230_TOOLCHAIN_NM="${SDK_TOOLCHAIN_DIR:-$HOME/.kendryte/k230_toolchains}/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin/riscv64-unknown-linux-musl-nm" \
+  ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
+)
 ```
 
 `--check` never modifies an SDK. It verifies the complete SHA-256 inventory,
@@ -64,6 +82,13 @@ real `git am`.
 脚本不会自行运行 `repo sync`、`git fetch`、`git stash`、`git reset` 或
 `git clean`。无关的未跟踪构建产物会保留；若未跟踪或已忽略路径会被补丁
 覆盖，脚本会在第一次真实 `git am` 前拒绝执行。
+
+After patching, the six target projects contain local deterministic commits.
+Do not blindly sync this workspace back to moving upstream branches. Preserve
+it for the release, and create a new locked workspace when upgrading.
+
+补丁应用后，六个目标项目会包含本地确定性提交。不要再把该工作区盲目同步回
+浮动上游分支；应保留它用于当前版本，升级时创建新的锁定工作区。
 
 ## Patch inventory / 补丁组成
 
@@ -116,6 +141,11 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
 
 ## Build notes / 构建说明
 
+- Run `make dl_toolchain` once on a fresh host. `SDK_TOOLCHAIN_DIR` controls the
+  SDK toolchain root; `K230_TOOLCHAIN_BIN` controls the musl `bin` directory
+  used by standalone EdgeOS sub-application scripts.
+- Run `git lfs fsck` after `git lfs pull`. The repository contains hundreds of
+  LFS-managed runtime files, and pointer files are not valid image contents.
 - Use `k230_canmv_dongshanpi_edgeos_defconfig`; it enables EdgeOS, user-space
   LVGL and cJSON, selects the four-partition A/B product layout, and disables
   the unrelated optional WebRTC/libpeer module.
@@ -130,6 +160,9 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
 - Product version `v0.7.5` is stored in
   `boards/k230_canmv_dongshanpi/system-version.txt` and is used by both the UI
   header and firmware filenames.
+- Re-run `tools/check_sdk_compat.sh` after the full build with
+  `K230_TOOLCHAIN_NM` set. Before the archive exists, the source/config checks
+  still run, but the `kd_player_seek` archive-symbol check cannot run.
 - On an SDK tree that was built before a `repo sync`, stale Mbed TLS objects
   can survive a configuration-header change and cause unrelated DTLS-SRTP
   link errors. A fresh checkout does not have this problem. For an existing
@@ -137,6 +170,7 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
   workspace:
 
 ```bash
+cd /path/to/rtos_k230 &&
 make -C src/rtsmart/libs/3rd-party/mbedtls/mbedtls/library clean
 ```
 
