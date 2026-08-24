@@ -60,7 +60,7 @@ To receive and parse VAXP protocol data exported by EdgeOS Desktop over UART, se
 | UI framework | LVGL |
 | AI runtime | nncase / KPU, depending on the application |
 | Toolchain | RISC-V musl cross toolchain supplied with the CanMV K230 SDK |
-| Storage | At least an 8 GB microSD; free space in `/data` must exceed the OTA KDIMG before updating |
+| Storage | Onboard eMMC, at least 8 GB recommended; free space in `/data` must exceed the OTA KDIMG before updating |
 
 This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase, OpenCV, and image-generation tools supplied by the CanMV K230 SDK. The VAXP protocol headers are bundled in `third_party/vaxp/include/`; the build no longer relies on local files outside this repository. It cannot be built or run as a standalone Linux desktop application.
 
@@ -123,19 +123,21 @@ git lfs fsck
 
 Clone `main` when browsing development sources. Firmware builds must pin both the SDK manifest and the application tag; do not combine a moving `main` with an arbitrary "latest" SDK.
 
-## Building under rtos_k230 / the CanMV K230 SDK
+## Building with the CanMV K230 SDK
 
-The complete user workflow is in [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md); the Chinese guide is [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md). It covers host dependencies, the locked SDK checkout, toolchains, Git LFS, Scheme A, configuration, the full build, artifact checks, and troubleshooting. Validation records are indexed in [`docs/validation/README.md`](docs/validation/README.md); the current two-SDK record is [`docs/validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md`](docs/validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).
+The complete user workflow is in [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md); the Chinese guide is [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md). The legacy filenames are retained for link compatibility, but the current workflow supports `canmv_k230` only. It covers host dependencies, the locked SDK checkout, toolchains, Git LFS, Scheme A, configuration, the full build, artifact checks, and troubleshooting. The board-porting rationale is documented in [`docs/PORTING_CANMV_K230_EN.md`](docs/PORTING_CANMV_K230_EN.md). Validation records are indexed in [`docs/validation/README.md`](docs/validation/README.md), with current v1.0.2 evidence in [`docs/validation/canmv-k230-edgeos-sdk-v1.0.2.md`](docs/validation/canmv-k230-edgeos-sdk-v1.0.2.md).
 
 > [!CAUTION]
-> `edgeos-sdk-v1.0.0` completed compilation and packaging, but the resulting factory firmware is **not bootable**. Its final K230 TOC can contain unresolved zero-sized boot entries, causing U-Boot SPL to stop at `K230 boot: invalid TOC entry 1`. Do not flash or redistribute firmware built from v1.0.0. Use `edgeos-sdk-v1.0.1` and product firmware `v0.7.6` or later.
+> `edgeos-sdk-v1.0.0` completed compilation and packaging, but the resulting factory firmware is **not bootable**. Its final K230 TOC can contain unresolved zero-sized boot entries, causing U-Boot SPL to stop at `K230 boot: invalid TOC entry 1`. Do not flash or redistribute firmware built from v1.0.0. Use `edgeos-sdk-v1.0.2` and product firmware `v0.7.7` or later.
 
-`rtos_k230` and `canmv_k230` are only local directory names. When the SDK comes from this project's 24-project lock, the build target remains `k230_canmv_dongshanpi_edgeos_defconfig`.
+The current release supports only a `canmv_k230` workspace created from this project's locked manifest. Its target is `k230_canmv_dongshanpi_edgeos_defconfig`. An arbitrary latest SDK, a different K230 SDK branch, or a renamed workspace is outside the current support boundary.
+
+`edgeos-sdk-v1.0.2` / `v0.7.7` passed the full `canmv_k230` build, complete-image structural gate, LYNX eMMC write, and real-board boot. The final image initialized both GC2093 inputs, ST7701, CST128, and SDIO Wi-Fi, obtained an IP address, and synchronized NTP, with no invalid TOC, Page Fault, or Illegal Instruction. Subjective acceptance of the optimized touch feel is still pending user operation and is not reported as passed. See the [v1.0.2 validation record](docs/validation/canmv-k230-edgeos-sdk-v1.0.2.md).
 
 Place the repository directly under the SDK application directory:
 
 ```text
-rtos_k230/                      # It may also be named canmv_k230
+canmv_k230/
 └── src/applications/EdgeOS_Desktop/
     ├── apps/
     ├── middleware/
@@ -149,11 +151,11 @@ For example:
 ```bash
 (
 set -e
-cd /path/to/rtos_k230/src/applications
-git clone --branch edgeos-sdk-v1.0.1 \
+cd /path/to/canmv_k230/src/applications
+git clone --branch edgeos-sdk-v1.0.2 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
-tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.1)
+tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.2)
 test -n "$tag_commit"
 test "$(git rev-parse HEAD)" = "$tag_commit"
 git describe --tags --exact-match HEAD
@@ -174,7 +176,7 @@ The dedicated `k230_canmv_dongshanpi_edgeos_defconfig` enables `DshanPI EdgeOS D
 
 The repository must be a direct child of `src/applications/`, but its directory name may be changed. The installed launcher remains `/sdcard/app/dshanpi_aimodel` regardless of the source directory name, preserving the OTA and sub-application return paths.
 
-> **SDK compatibility:** This repository's [`sdk/`](sdk/) directory contains the reproducible Scheme A patch set, including the player, touch-click filtering, A/B OTA, media mirroring, system version, and dedicated product-configuration extensions. The patches are strictly locked to all 24 official upstream revisions recorded in [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml); they are not intended for arbitrary SDK revisions. `--check` validates the complete lock, worktrees, patch integrity, and deterministic replay without modifying source, while `--apply` applies the mutually dependent set only after every preflight check succeeds. Do not cherry-pick part of the set or force it onto a mismatch. For a fresh SDK, do not sync the moving CanMV branches directly; follow the [`sdk/README.md`](sdk/README.md) workflow that uses the `edgeos-sdk-v1.0.1` tag as the repo manifest source.
+> **SDK compatibility:** This repository's [`sdk/`](sdk/) directory contains the reproducible Scheme A patch set, including the player, touch-click filtering, A/B OTA, media mirroring, system version, and dedicated product-configuration extensions. The patches are strictly locked to all 24 official upstream revisions recorded in [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml); they are not intended for arbitrary SDK revisions. `--check` validates the complete lock, worktrees, patch integrity, and deterministic replay without modifying source, while `--apply` applies the mutually dependent set only after every preflight check succeeds. Do not cherry-pick part of the set or force it onto a mismatch. For a fresh SDK, do not sync the moving CanMV branches directly; follow the [`sdk/README.md`](sdk/README.md) workflow that uses the `edgeos-sdk-v1.0.2` tag as the repo manifest source.
 
 EdgeOS Desktop does not depend on WebRTC. The dedicated defconfig disables it so the product does not pull in unrelated dependencies; features such as Mbed TLS for OTA remain enabled.
 
@@ -190,7 +192,7 @@ export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-
 After applying the SDK patches, integrating the application, selecting the dedicated defconfig, and passing the compatibility check above, build from the SDK root (skip this if you already ran the final command in the previous block):
 
 ```bash
-cd /path/to/rtos_k230
+cd /path/to/canmv_k230
 bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
@@ -206,18 +208,18 @@ Typical artifacts are written to:
 
 ```text
 output/k230_canmv_dongshanpi_edgeos_defconfig/
-├── DshanPI_EdgeOS_Desktop_v0.7.6.img
-├── DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
+├── DshanPI_EdgeOS_Desktop_v0.7.7.img
+├── DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg
 └── ...matching .gz and digest files
 ```
 
-The current product version is `v0.7.6`. It is maintained centrally in the SDK board file `boards/k230_canmv_dongshanpi/system-version.txt`; do not maintain another version string in the UI or packaging scripts.
+The current product version is `v0.7.7`. It is maintained centrally in the SDK board file `boards/k230_canmv_dongshanpi/system-version.txt`; do not maintain another version string in the UI or packaging scripts.
 
-After the full build, run `tools/check_sdk_compat.sh` again with the cross `nm` explicitly selected so the generated player archive ABI is checked. Then run `tools/check_firmware_image.py` against the complete `.img`; this catches the zero-sized or inconsistent TOC entries that made the v1.0.0 image unbootable. The complete commands and measured results are in the `rtos_k230` build guide and current validation record.
+After the full build, run `tools/check_sdk_compat.sh` again with the cross `nm` explicitly selected so the generated player archive ABI is checked. Then run `tools/check_firmware_image.py` against the complete `.img`; this catches the zero-sized or inconsistent TOC entries that made the v1.0.0 image unbootable. The complete commands and measured results are in the `canmv_k230` build guide and current validation record.
 
 ### Flashing with LYNX
 
-For factory installation, use the uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.6.img` and select **K230**, **EMMC(SDIO0)**, and write offset **0** in LYNX. Never flash the `_ota.kdimg` with LYNX: it is an in-system A/B update package and does not contain a complete bootable disk image. See [`docs/FLASH_LYNX_EN.md`](docs/FLASH_LYNX_EN.md) for the preflight checks, exact settings, expected HS200 fallback message, and recovery guidance.
+For factory installation, use the uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.7.img` and select **K230**, **EMMC(SDIO0)**, and write offset **0** in LYNX. Never flash the `_ota.kdimg` with LYNX: it is an in-system A/B update package and does not contain a complete bootable disk image. See [`docs/FLASH_LYNX_EN.md`](docs/FLASH_LYNX_EN.md) for the preflight checks, exact settings, expected HS200 fallback message, and recovery guidance.
 
 `EMMC(SDIO0)` is the board's physical onboard eMMC. The runtime path `/sdcard` is only the logical mount point of the active application partition on that eMMC; it does not mean that LYNX should target a removable SD card.
 

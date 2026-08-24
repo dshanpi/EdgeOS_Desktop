@@ -2,3 +2,5 @@
 0002-feat-mount-select-EdgeOS-application-slot-from-ATAG.patch
 0003-fix-touch-ignore-empty-event-queue-reads.patch
 0004-feat-pmu-expose-reboot-control-ioctls.patch
+0005-feat-board-restore-DongshanPI-EdgeOS-boot-profile.patch
+0006-fix-touch-preserve-report-timing-and-configured-inte.patch

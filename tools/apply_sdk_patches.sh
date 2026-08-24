@@ -435,12 +435,12 @@ expected_app_registration_change()
     ((${#changed_files[@]} == 1)) || return 1
     [[ ${changed_files[0]} == src/applications/apps.mk ]] || return 1
 
-    mapping='subdirs-$(CONFIG_APP_ENABLE_LVGL_LAUNCHER) += '
+    mapping='subdirs-$(CONFIG_APP_ENABLE_EDGEOS_DESKTOP) += '
     mapping+=$(basename -- "$EDGEOS_ROOT")
     git -C "$repo" show HEAD:src/applications/apps.mk |
         awk -v mapping="$mapping" '
             BEGIN { registered = 0 }
-            /^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_LVGL_LAUNCHER\)[[:space:]]*\+=[[:space:]]*/ {
+            /^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_EDGEOS_DESKTOP\)[[:space:]]*\+=[[:space:]]*/ {
                 if (!registered) {
                     print mapping
                     registered = 1

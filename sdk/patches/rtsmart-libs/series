@@ -4,3 +4,4 @@
 0004-feat-kconfig-allow-product-LVGL-with-CanMV.patch
 0005-feat-lvgl-enable-EdgeOS-fonts-and-JPEG-decoder.patch
 0006-fix-build-prefer-RT-Smart-HAL-libraries-on-name-coll.patch
+0007-perf-lvgl-reduce-touch-latency-and-display-overhead.patch

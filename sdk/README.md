@@ -16,9 +16,9 @@ checks, and troubleshooting, use
 For factory flashing with LYNX, use the
 [`English LYNX guide`](../docs/FLASH_LYNX_EN.md)；中文说明见
 [`LYNX 烧录指南`](../docs/FLASH_LYNX.md)。
-The SDK root may be
-named `rtos_k230` or `canmv_k230`; the directory name does not change the
-manifest or build target.
+This release is supported and validated only with the official `canmv_k230`
+SDK baseline locked by this directory. 本版本仅支持并验证
+`upstream-lock.xml` 锁定的官方 `canmv_k230` SDK 基线。
 
 ## Release status / 版本状态
 
@@ -29,14 +29,16 @@ manifest or build target.
 > `edgeos-sdk-v1.0.0` 及其 `v0.7.5` 出厂镜像；其中 `spl`、`uboot` 的 TOC
 > 长度被错误写成零，会在 SPL 阶段停止启动。
 
-The supported replacement is SDK patch set `edgeos-sdk-v1.0.1`, which produces
-product firmware `v0.7.6`. It refreshes the TOC only after final partition
-offsets and sizes have been resolved, propagates image-generation failures to
-`make`, and includes regression tests for both behaviors.
+The supported replacement is SDK patch set `edgeos-sdk-v1.0.2`, which produces
+product firmware `v0.7.7`. It retains the corrected TOC/error propagation from
+v1.0.1 and adds the validated DongshanPI camera, ST7701 display, RTL8733BS
+Wi-Fi, touch, pinmux and EdgeOS boot profiles. It also explicitly disables the
+unsafe VG-Lite path and includes the low-latency touch queue/timestamp fixes.
 
-当前支持的替代版本是 SDK 补丁集 `edgeos-sdk-v1.0.1`，生成产品固件
-`v0.7.6`。该版本会在最终分区偏移与长度解析完成后重新同步 TOC，并将镜像
-生成错误传递给 `make`，同时包含对应的回归测试。
+当前支持的替代版本是 SDK 补丁集 `edgeos-sdk-v1.0.2`，生成产品固件
+`v0.7.7`。它保留 v1.0.1 的 TOC 与错误传递修复，并加入已经验证的东山派
+摄像头、ST7701 屏幕、RTL8733BS Wi-Fi、触摸、引脚复用和 EdgeOS 启动配置；
+同时显式关闭不安全的 VG-Lite 路径，并包含低延迟触摸队列与时间戳修复。
 
 ## Fresh checkout / 全新检出
 
@@ -52,9 +54,9 @@ manifest:
 ```bash
 (
 set -e
-EDGEOS_TAG=edgeos-sdk-v1.0.1
-mkdir "$HOME/rtos_k230" &&
-cd "$HOME/rtos_k230" &&
+EDGEOS_TAG=edgeos-sdk-v1.0.2
+mkdir "$HOME/canmv_k230" &&
+cd "$HOME/canmv_k230" &&
 repo init -u https://github.com/dshanpi/EdgeOS_Desktop.git \
   -b "refs/tags/$EDGEOS_TAG" \
   -m sdk/manifests/upstream-lock.xml \
@@ -124,12 +126,12 @@ tree ID 见 [`manifest.json`](manifest.json)。
 
 | Project path | Official base | Purpose |
 | --- | --- | --- |
-| `.` | `3f18247b4863` | Dedicated defconfig, v0.7.6 product layout, final TOC synchronization and image-error propagation |
-| `src/rtsmart/libs` | `4964b24f0208` | Touch, OTA and PMU APIs; fonts, LVGL opt-in, HAL/VG-Lite library precedence |
+| `.` | `3f18247b4863` | Dedicated v0.7.7 defconfig, DongshanPI hardware profile, A/B layout, final TOC synchronization and image-error propagation |
+| `src/rtsmart/libs` | `4964b24f0208` | Low-latency touch/timestamps, OTA and PMU APIs; fonts, LVGL opt-in, software-renderer policy |
 | `src/rtsmart/libs/3rd-party/lvgl/lvgl` | `c210a4efa2f4` | TJPGD 1/8 thumbnail decoding |
-| `src/rtsmart/mpp` | `631ca8660b31` | Camera mirror, source MP4 player/seek, H.264 FLV muxer |
-| `src/rtsmart/rtsmart` | `650f16563075` | Safe OTA sessions, slot mounts, touch and PMU kernel ABI |
-| `src/uboot/uboot` | `56a131d12108` | Verified A/B selection, attempts, rollback and slot ATAG |
+| `src/rtsmart/mpp` | `631ca8660b31` | DongshanPI GC2093/ST7701 setup, camera mirror, source MP4 player/seek, H.264 FLV muxer |
+| `src/rtsmart/rtsmart` | `650f16563075` | EdgeOS boot/Wi-Fi/touch profile, report timing/IRQ fix, safe OTA sessions, slot mounts and PMU ABI |
+| `src/uboot/uboot` | `56a131d12108` | DongshanPI peripheral pinmux, verified A/B selection, attempts, rollback and slot ATAG |
 
 [`manifests/upstream-lock.xml`](manifests/upstream-lock.xml) freezes every
 project in the complete SDK, not only the six modified projects. The patch set
@@ -171,14 +173,16 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
   LFS-managed runtime files, and pointer files are not valid image contents.
 - Use `k230_canmv_dongshanpi_edgeos_defconfig`; it enables EdgeOS, user-space
   LVGL and cJSON, selects the four-partition A/B product layout, and disables
-  the unrelated optional WebRTC/libpeer module.
+  the unrelated optional WebRTC/libpeer module. It also selects the validated
+  camera, display, Wi-Fi and touch wiring and explicitly keeps all three
+  VG-Lite layers disabled in favor of the verified software renderer.
 - The factory image contains identical `app_a` and `app_b` filesystems. OTA
   packages carry `rtt`, `rtapp`, and `app` together and activate the inactive
   slot only after all three payloads pass readback SHA-256 verification.
-- `DshanPI_EdgeOS_Desktop_v0.7.6.img` is the complete raw factory image. It
+- `DshanPI_EdgeOS_Desktop_v0.7.7.img` is the complete raw factory image. It
   contains MBR, TOC, SPL, U-Boot, both RT-Smart/RTApp slots and both application
   filesystems; give this file to LYNX when provisioning eMMC. In contrast,
-  `DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg` contains only the three OTA payloads
+  `DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg` contains only the three OTA payloads
   for the inactive slot. It is consumed by the running EdgeOS OTA service and
   is not a bootable disk image; never select it as the LYNX full-image input.
 - `genimage-sdcard-edgeos.cfg` keeps the SDK's historical `sdcard` filename,
@@ -192,13 +196,13 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
   reboots once to rescan the MBR, then formats and mounts it. Use target eMMC
   or microSD media of at least 8 GB, do not interrupt this first-boot sequence,
   and keep `/data` free space larger than the uncompressed OTA KDIMG.
-- Product version `v0.7.6` is stored in
+- Product version `v0.7.7` is stored in
   `boards/k230_canmv_dongshanpi/system-version.txt` and is used by both the UI
   header and firmware filenames.
 - Re-run `tools/check_sdk_compat.sh` after the full build with
   `K230_TOOLCHAIN_NM` set. Before the archive exists, the source/config checks
   still run, but the `kd_player_seek` archive-symbol check cannot run. If the
-  exact `v0.7.6` full image exists, this command also runs the repository's
+  exact `v0.7.7` full image exists, this command also runs the repository's
   read-only MBR/TOC/K230-package validator; a missing image is only a warning
   so the compatibility check remains useful before the build.
 - On an SDK tree that was built before a `repo sync`, stale Mbed TLS objects
@@ -208,7 +212,7 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
   workspace:
 
 ```bash
-cd /path/to/rtos_k230 &&
+cd /path/to/canmv_k230 &&
 make -C src/rtsmart/libs/3rd-party/mbedtls/mbedtls/library clean
 ```
 
@@ -226,7 +230,7 @@ after applying the patch set:
 `ImageError` 会继续传递，使顶层构建可靠失败。应用补丁后可运行 SDK 回归测试：
 
 ```bash
-cd /path/to/rtos_k230
+cd /path/to/canmv_k230
 PYTHONPATH="$PWD/tools" \
   python3 -m unittest discover \
     -s tools/genimage_py/tests -p 'test_toc_sync.py' -v
@@ -237,7 +241,7 @@ After a full build, validate the exact factory image before handing it to LYNX:
 ```bash
 ./src/applications/EdgeOS_Desktop/tools/check_firmware_image.py \
   output/k230_canmv_dongshanpi_edgeos_defconfig/\
-DshanPI_EdgeOS_Desktop_v0.7.6.img
+DshanPI_EdgeOS_Desktop_v0.7.7.img
 ```
 
 The result must end in `PASS`. This validator is read-only and checks the MBR,

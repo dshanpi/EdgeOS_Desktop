@@ -1,21 +1,22 @@
-# Building EdgeOS Desktop under `rtos_k230`
+# Building EdgeOS Desktop under `canmv_k230`
 
-This guide is for users who need to integrate EdgeOS Desktop into a K230 RTOS
-SDK and generate complete firmware. `rtos_k230` and `canmv_k230` are only local
-directory names. When the workspace comes from the locked K230 RTOS/CanMV repo
-manifest, the correct target is still
-`k230_canmv_dongshanpi_edgeos_defconfig`.
+This guide integrates EdgeOS Desktop into the CanMV K230 SDK and produces a
+complete firmware image. The current public release supports only a
+`canmv_k230` workspace created from this project's locked manifest, using the
+`k230_canmv_dongshanpi_edgeos_defconfig` target. The legacy filename is kept for
+link compatibility; it does not imply continued support for a separate
+`rtos_k230` workspace.
 
 This procedure pins the following compatibility unit:
 
 | Component | Pinned version |
 | --- | --- |
-| EdgeOS Desktop | `edgeos-sdk-v1.0.1` |
-| EdgeOS tag commit | Resolve and verify locally with `git rev-list -n 1 edgeos-sdk-v1.0.1` |
+| EdgeOS Desktop | `edgeos-sdk-v1.0.2` |
+| EdgeOS tag commit | Resolve and verify locally with `git rev-list -n 1 edgeos-sdk-v1.0.2` |
 | Upstream manifest | `d207027db3ae457cd43629c80b8a42e3b79fd51a` |
 | SDK projects | 24 immutable revisions in `sdk/manifests/upstream-lock.xml` |
 | Target board | DshanPI CanMV-K230 V3 |
-| Product firmware | `v0.7.6` |
+| Product firmware | `v0.7.7` |
 
 Do not force this patch set onto an arbitrary "latest" SDK or apply only part
 of it.
@@ -25,12 +26,12 @@ of it.
 > generated factory firmware is **not bootable**. The final K230 TOC can retain
 > unresolved zero-sized boot entries, and U-Boot SPL then stops at
 > `K230 boot: invalid TOC entry 1`. Do not flash or redistribute a v1.0.0 image.
-> Build `edgeos-sdk-v1.0.1` and product firmware `v0.7.6` or later, then run the
+> Build `edgeos-sdk-v1.0.2` and product firmware `v0.7.7` or later, then run the
 > structural image check in section 7 before flashing.
 
-The validation index is [`validation/README.md`](validation/README.md). Results
-for both `canmv_k230` and `rtos_k230` are recorded in
-[`validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md`](validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).
+The validation index is [`validation/README.md`](validation/README.md). Current
+v1.0.2 results are recorded in
+[`validation/canmv-k230-edgeos-sdk-v1.0.2.md`](validation/canmv-k230-edgeos-sdk-v1.0.2.md).
 
 ## 1. Prepare the host
 
@@ -60,26 +61,24 @@ temporary images require additional space.
 
 ## 2. Create a locked SDK workspace
 
-A fresh workspace is strongly recommended. The directory is deliberately
-named `rtos_k230` below to demonstrate that the name does not change the SDK
-type or target:
+A fresh `canmv_k230` workspace is strongly recommended.
 
-The command below requires `$HOME/rtos_k230` not to exist. Stop immediately if
+The command below requires `$HOME/canmv_k230` not to exist. Stop immediately if
 `mkdir` or any later command fails; do not continue from the wrong directory:
 
 ```bash
-mkdir "$HOME/rtos_k230" &&
-cd "$HOME/rtos_k230" &&
+mkdir "$HOME/canmv_k230" &&
+cd "$HOME/canmv_k230" &&
 repo init \
   -u https://github.com/dshanpi/EdgeOS_Desktop.git \
-  -b refs/tags/edgeos-sdk-v1.0.1 \
+  -b refs/tags/edgeos-sdk-v1.0.2 \
   -m sdk/manifests/upstream-lock.xml \
   --repo-url=https://github.com/canmv-k230/git-repo.git &&
 repo sync -c -j"$(nproc)"
 ```
 
-The full `refs/tags/edgeos-sdk-v1.0.1` ref is required. A bare
-`-b edgeos-sdk-v1.0.1` is interpreted as a branch by repo and fails.
+The full `refs/tags/edgeos-sdk-v1.0.2` ref is required. A bare
+`-b edgeos-sdk-v1.0.2` is interpreted as a branch by repo and fails.
 
 Inspect the workspace and download both SDK toolchains:
 
@@ -99,12 +98,12 @@ The application must be an immediate child of `src/applications/`:
 ```bash
 (
 set -e
-cd "$HOME/rtos_k230/src/applications"
-git clone --branch edgeos-sdk-v1.0.1 \
+cd "$HOME/canmv_k230/src/applications"
+git clone --branch edgeos-sdk-v1.0.2 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 
-tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.1)
+tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.2)
 test -n "$tag_commit"
 test "$(git rev-parse HEAD)" = "$tag_commit"
 printf 'Verified EdgeOS commit: %s\n' "$(git rev-parse HEAD)"
@@ -123,7 +122,7 @@ runtime resources.
 Run the read-only gate first, then apply all six SDK series as one unit:
 
 ```bash
-cd "$HOME/rtos_k230/src/applications/EdgeOS_Desktop" &&
+cd "$HOME/canmv_k230/src/applications/EdgeOS_Desktop" &&
 ./tools/apply_sdk_patches.sh --check &&
 ./tools/apply_sdk_patches.sh --apply &&
 ./tools/integrate_canmv_sdk.sh
@@ -142,19 +141,21 @@ Create a new locked workspace when upgrading to another release.
 Return to the SDK root and use the dedicated EdgeOS defconfig:
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make k230_canmv_dongshanpi_edgeos_defconfig &&
 ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 ```
 
-Do not invent a `k230_rtos_*` target because the local directory is named
-`rtos_k230`. The active configuration should include at least:
+Do not invent a `k230_rtos_*` target. The active configuration should include
+at least:
 
 ```text
 CONFIG_BOARD_CONFIG_NAME="k230_canmv_dongshanpi_edgeos_defconfig"
 CONFIG_RT_PARTITION_NUMBER=4
 CONFIG_RTSMART_3RD_PARTY_ENABLE_LVGL=y
-CONFIG_APP_ENABLE_LVGL_LAUNCHER=y
+CONFIG_APP_ENABLE_EDGEOS_DESKTOP=y
+# CONFIG_RTSMART_3RD_PARTY_LVGL_USE_VGLITE is not set
+# CONFIG_RTSMART_HAL_ENABLE_VG_LITE is not set
 ```
 
 The dedicated defconfig already enables EdgeOS. Use `make menuconfig` only to
@@ -171,9 +172,9 @@ in `src/applications/apps.mk`.
 Use a command that propagates a nested make failure through `tee`:
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 bash -o pipefail -c \
-  'time make 2>&1 | tee edgeos-v1.0.1-build.log'
+  'time make 2>&1 | tee edgeos-v1.0.2-build.log'
 ```
 
 Do not treat `make app` as final acceptance. It is useful for application
@@ -195,16 +196,16 @@ K230_TOOLCHAIN_NM="${SDK_TOOLCHAIN_DIR:-$HOME/.kendryte/k230_toolchains}/riscv64
 ## 7. Verify the artifacts
 
 ```bash
-cd "$HOME/rtos_k230/output/k230_canmv_dongshanpi_edgeos_defconfig"
+cd "$HOME/canmv_k230/output/k230_canmv_dongshanpi_edgeos_defconfig"
 
-test -s DshanPI_EdgeOS_Desktop_v0.7.6.img
-test -s DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
+test -s DshanPI_EdgeOS_Desktop_v0.7.7.img
+test -s DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg
 sha256sum \
-  DshanPI_EdgeOS_Desktop_v0.7.6.img \
-  DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
-fdisk -l DshanPI_EdgeOS_Desktop_v0.7.6.img
-python3 "$HOME/rtos_k230/src/applications/EdgeOS_Desktop/tools/check_firmware_image.py" \
-  DshanPI_EdgeOS_Desktop_v0.7.6.img
+  DshanPI_EdgeOS_Desktop_v0.7.7.img \
+  DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg
+fdisk -l DshanPI_EdgeOS_Desktop_v0.7.7.img
+python3 "$HOME/canmv_k230/src/applications/EdgeOS_Desktop/tools/check_firmware_image.py" \
+  DshanPI_EdgeOS_Desktop_v0.7.7.img
 sed -n '1,120p' images/sdcard/revision.txt
 ```
 
@@ -213,6 +214,10 @@ Do not accept the image unless `check_firmware_image.py` ends with
 TOC entry—including `spl` and `uboot`—must have a nonzero final offset and size.
 This structural gate is required even when the full compile and packaging
 commands returned zero.
+
+The measured v1.0.2 full image is `2283798528` bytes with SHA-256
+`77ee49eb3bc3f3483166777c7d03e56c29cc1840665706f56d69454a241fe8b8`.
+All 11 TOC entries, three MBR partitions, and verifiable payload hashes passed.
 
 The factory image should contain three pre-created FAT partitions: a 20 MiB
 `bin`, a 1 GiB `app_a`, and a 1 GiB `app_b`. After this full image is written to
@@ -225,7 +230,7 @@ The firmware's `/sdcard` path is a logical mount point for the selected
 microSD boot medium and does not change the LYNX target from `EMMC(SDIO0)`.
 
 The device OTA client consumes the uncompressed
-`DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg`. Do not configure a `.kdimg.gz` file
+`DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg`. Do not configure a `.kdimg.gz` file
 as the device download target. Before downloading an OTA, `/data` must have
 more free space than the actual uncompressed KDIMG; leave additional headroom
 in a real deployment.
@@ -240,7 +245,7 @@ Follow [`FLASH_LYNX_EN.md`](FLASH_LYNX_EN.md). The required LYNX values are:
 
 | LYNX field | Required value |
 | --- | --- |
-| Image | Uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.6.img` |
+| Image | Uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.7.img` |
 | Chip/device | `K230` |
 | Storage target | `EMMC(SDIO0)` |
 | Write mode | Complete/raw image |
@@ -249,6 +254,15 @@ Follow [`FLASH_LYNX_EN.md`](FLASH_LYNX_EN.md). The required LYNX values are:
 Never use `_ota.kdimg`, `.kdimg.gz`, or `.img.gz` as the raw LYNX input. If the
 factory image was distributed as `.img.gz`, decompress it first and validate
 the resulting `.img` with `check_firmware_image.py`.
+
+Verify the SHA-256 again after transferring the image into LYNX so a same-named
+cached file cannot silently select stale firmware. The measured run selected
+USB target `2:8`, serial `COM9`, and EMMC/SDIO0; the flash task completed with
+exit code 0. The final image continued from U-Boot SPL `00006-g94c9688c`
+through OpenSBI and RT-Smart, reported system `v0.7.7`, initialized GC2093 on
+CSI0/CSI2, ST7701, CST128 on `i2c3`, and SDIO Wi-Fi, acquired an IP address, and
+synchronized NTP. No invalid TOC, Page Fault, or Illegal Instruction appeared.
+Subjective smooth-touch acceptance remains pending user operation.
 
 An `HS200 tuning failed` line is not by itself a boot failure when it is followed
 by `MMC0: selected timing: MMC High Speed (52MHz)`: U-Boot has successfully
@@ -267,10 +281,10 @@ set -e
 export SDK_TOOLCHAIN_DIR="$HOME/k230_toolchains"
 export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin"
 
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make dl_toolchain
 make k230_canmv_dongshanpi_edgeos_defconfig
-bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.1-build.log'
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.2-build.log'
 K230_TOOLCHAIN_NM="$K230_TOOLCHAIN_BIN/riscv64-unknown-linux-musl-nm" \
   ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 )
@@ -302,7 +316,7 @@ mistake:
 ```bash
 (
 set -e
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 test -z "$(git diff --cached --name-only)"
 test "$(git diff --name-only)" = "src/applications/apps.mk"
 git diff -- src/applications/apps.mk
@@ -337,21 +351,23 @@ new mapping has been reviewed and the build has completed.
 | Missing `lv_k230_touch_accept_click()` or `k230_ota_get_status()` | Only the app or selected patches were copied | Apply the complete six-project unit |
 | EdgeOS is absent from `Applications Configuration` | The clone is not an immediate child of `src/applications/`, or Kconfig was not regenerated | Correct the location and rerun defconfig/menuconfig |
 | Menu entry exists but no `[BUILD] applications EdgeOS_Desktop` | `apps.mk` is not registered | Run `tools/integrate_canmv_sdk.sh` |
-| `revision mismatch` | SDK is not the v1.0.1 24-project baseline | Create a locked workspace; do not force |
+| `revision mismatch` | SDK is not the v1.0.2 24-project baseline | Create a locked workspace; do not force |
 | Models are tiny LFS pointers | LFS content was not downloaded | Run `git lfs pull && git lfs fsck` |
 | Cross compiler not found | Toolchains are missing or variables disagree | Run `make dl_toolchain` and inspect both variables |
 | DTLS-SRTP/Mbed TLS undefined references | Old Mbed TLS objects survived a config change, or the ordinary defconfig is active | Select the EdgeOS defconfig; use the targeted clean below only when necessary |
 | App FAT image reports no space | Old 512 MiB layout or incomplete resources | Verify complete Scheme A and the 1 GiB A/B layout |
-| `K230 boot: invalid TOC entry 1` | An unbootable v1.0.0, stale, or damaged full image was flashed | Build v1.0.1/v0.7.6, require the image checker to pass, then reflash the complete `.img` at offset 0 |
+| `K230 boot: invalid TOC entry 1` | An unbootable v1.0.0, stale, or damaged full image was flashed | Build v1.0.2/v0.7.7, require the image checker to pass, then reflash the complete `.img` at offset 0 |
 | `HS200 tuning failed` followed by 52 MHz selection | U-Boot could not use HS200 and selected its supported fallback | This fallback is expected; diagnose only if later reads or boot stages fail |
 
 For a reused SDK with confirmed stale Mbed TLS objects, use only this targeted
 cleanup:
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make -C src/rtsmart/libs/3rd-party/mbedtls/mbedtls/library clean
 ```
 
-See the validation [`index`](validation/README.md) and the current measured
-[`canmv_k230` / `rtos_k230` v1.0.1 results](validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).
+See the validation [`index`](validation/README.md), the current measured
+[`canmv_k230` v1.0.2 results](validation/canmv-k230-edgeos-sdk-v1.0.2.md), and
+the board-porting and patch-replay guide in
+[`PORTING_CANMV_K230_EN.md`](PORTING_CANMV_K230_EN.md).

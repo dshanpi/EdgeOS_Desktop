@@ -6,3 +6,5 @@
 0006-fix-images-fail-closed-on-packaging-errors.patch
 0007-fix-images-refresh-final-TOC-layout.patch
 0008-chore-release-bump-EdgeOS-firmware-to-v0.7.6.patch
+0009-build-edgeos-lock-DongshanPI-product-hardware-profil.patch
+0010-chore-release-bump-EdgeOS-firmware-to-v0.7.7.patch

@@ -18,6 +18,8 @@ APPS_MK="$APPS_DIR/apps.mk"
 [ "$(basename -- "$APPS_DIR")" = "applications" ] ||
     fail "place this repository directly under canmv_k230/src/applications"
 [ -f "$APP_DIR/Kconfig" ] || fail "missing $APP_DIR/Kconfig"
+grep -Eq '^[[:space:]]*config[[:space:]]+APP_ENABLE_EDGEOS_DESKTOP([[:space:]]|$)' \
+    "$APP_DIR/Kconfig" || fail "Kconfig does not define APP_ENABLE_EDGEOS_DESKTOP"
 [ -f "$SDK_ROOT/Makefile" ] || fail "cannot find the CanMV SDK root"
 [ -f "$APPS_MK" ] || fail "cannot find $APPS_MK"
 
@@ -27,7 +29,7 @@ case "$APP_NAME" in
         ;;
 esac
 
-MAPPING='subdirs-$(CONFIG_APP_ENABLE_LVGL_LAUNCHER) += '"$APP_NAME"
+MAPPING='subdirs-$(CONFIG_APP_ENABLE_EDGEOS_DESKTOP) += '"$APP_NAME"
 TMP_FILE=$(mktemp "$APPS_MK.edgeos.XXXXXX") ||
     fail "cannot create a temporary file next to $APPS_MK"
 
@@ -42,7 +44,7 @@ trap 'exit 143' TERM
 
 awk -v mapping="$MAPPING" '
     BEGIN { registered = 0 }
-    /^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_LVGL_LAUNCHER\)[[:space:]]*\+=[[:space:]]*/ {
+    /^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_EDGEOS_DESKTOP\)[[:space:]]*\+=[[:space:]]*/ {
         if (!registered) {
             print mapping
             registered = 1

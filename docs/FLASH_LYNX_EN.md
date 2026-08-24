@@ -1,8 +1,8 @@
 # Flashing EdgeOS Desktop with LYNX
 
 This guide installs the complete EdgeOS factory image on the DshanPI CanMV-K230
-V3 board's onboard eMMC. It applies to the `edgeos-sdk-v1.0.1` release and
-product firmware `v0.7.6`.
+V3 board's onboard eMMC. It applies to the `edgeos-sdk-v1.0.2` release and
+product firmware `v0.7.7`.
 
 > [!CAUTION]
 > `edgeos-sdk-v1.0.0` compiled and packaged successfully, but the generated
@@ -13,7 +13,7 @@ product firmware `v0.7.6`.
 The build procedure is in [`BUILD_RTOS_K230_EN.md`](BUILD_RTOS_K230_EN.md).
 Validation records are listed in [`validation/README.md`](validation/README.md),
 including the current
-[`canmv_k230` / `rtos_k230` v1.0.1 record](validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).
+[`canmv_k230` v1.0.2 record](validation/canmv-k230-edgeos-sdk-v1.0.2.md).
 
 ## 1. Select the correct artifact
 
@@ -21,10 +21,10 @@ The output directory contains files with different purposes:
 
 | Artifact | Purpose | Use with LYNX? |
 | --- | --- | --- |
-| `DshanPI_EdgeOS_Desktop_v0.7.6.img` | Complete disk image containing the MBR, K230 TOC, SPL, U-Boot, RT-Smart, RTApp, and application partitions | **Yes** |
-| `DshanPI_EdgeOS_Desktop_v0.7.6.img.gz` | Compressed transport copy of the complete image | No; decompress it first |
-| `DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg` | A/B update package consumed by the updater on an already bootable EdgeOS installation | **Never** |
-| `DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg.gz` | Compressed transport copy of the OTA package | **Never** |
+| `DshanPI_EdgeOS_Desktop_v0.7.7.img` | Complete disk image containing the MBR, K230 TOC, SPL, U-Boot, RT-Smart, RTApp, and application partitions | **Yes** |
+| `DshanPI_EdgeOS_Desktop_v0.7.7.img.gz` | Compressed transport copy of the complete image | No; decompress it first |
+| `DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg` | A/B update package consumed by the updater on an already bootable EdgeOS installation | **Never** |
+| `DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg.gz` | Compressed transport copy of the OTA package | **Never** |
 
 The OTA KDIMG does not contain a complete factory disk layout. Flashing it at
 offset 0 cannot provision a bootable eMMC.
@@ -36,7 +36,7 @@ unpublished commit ID into a script:
 
 ```bash
 cd /path/to/EdgeOS_Desktop
-tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.1)
+tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.2)
 test -n "$tag_commit"
 test "$(git rev-parse HEAD)" = "$tag_commit"
 git describe --tags --exact-match HEAD
@@ -46,7 +46,7 @@ Validate the uncompressed full image before opening LYNX:
 
 ```bash
 EDGEOS_ROOT=/path/to/EdgeOS_Desktop
-IMAGE=/path/to/DshanPI_EdgeOS_Desktop_v0.7.6.img
+IMAGE=/path/to/DshanPI_EdgeOS_Desktop_v0.7.7.img
 
 test -s "$IMAGE"
 python3 "$EDGEOS_ROOT/tools/check_firmware_image.py" "$IMAGE"
@@ -65,6 +65,11 @@ entries must have nonzero offsets and sizes. Compare the SHA-256 value with the
 release or validation record for the exact image being installed; locally
 rebuilt images can differ when build metadata is embedded.
 
+The measured v1.0.2 full image is `2283798528` bytes with SHA-256
+`77ee49eb3bc3f3483166777c7d03e56c29cc1840665706f56d69454a241fe8b8`.
+Its 11 TOC entries, three MBR partitions, ranges, and verifiable payload hashes
+all passed.
+
 ## 3. Configure LYNX
 
 Connect the board with stable power and use its documented download-mode or
@@ -72,7 +77,7 @@ LYNX detection procedure. Before starting the write, confirm every field below:
 
 | LYNX field | Required value |
 | --- | --- |
-| Image/file | Uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.6.img` |
+| Image/file | Uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.7.img` |
 | Chip/device | `K230` |
 | Storage/medium | `EMMC(SDIO0)` |
 | Write mode | Complete/raw image |
@@ -92,13 +97,20 @@ Use this sequence:
    USB cable and provide stable power.
 3. Select K230, `EMMC(SDIO0)`, complete/raw image, the full `.img`, and offset 0
    in LYNX.
-4. Hold the board's `FEL` button, press and release `RST`, and release `FEL`
-   after LYNX detects the device. The board documentation also permits entering
-   download mode by powering on while `FEL` is held.
-5. Start the write and wait for LYNX to report completion. Do not reset,
+4. Verify the LYNX-side transferred file SHA-256 against the local value so a
+   same-named cached image cannot silently select stale firmware.
+5. Follow the board documentation for its boot key/BootROM strap and reset
+   sequence, or run `reboot_to_upgrade` from an already running RT-Smart serial
+   console. Continue only after LYNX detects the K230 download device.
+6. Start the write and wait for LYNX to report completion. Do not reset,
    disconnect, or remove power while erasing, writing, or verifying.
-6. Leave download mode, reset or power-cycle the board, and capture the serial
+7. Leave download mode, reset or power-cycle the board, and capture the serial
    log from the beginning.
+
+The measured v1.0.2 run used K230 USB target `2:8` and serial `COM9`; the
+LYNX-side hash matched the local image, and the EMMC flash task completed with
+exit code 0. USB numbering and serial names are host-specific evidence, not
+fixed values that another host must reproduce.
 
 ## 4. Understand eMMC and `/sdcard`
 
@@ -134,12 +146,20 @@ RT-Smart uses the remaining eMMC space to create `/data`, reboots once to rescan
 the partition table, then formats and mounts it. Do not interrupt this first-boot
 sequence.
 
+The final measured image continued from U-Boot SPL `00006-g94c9688c` through
+OpenSBI and RT-Smart, reported system `v0.7.7`, and initialized ST7701, GC2093
+on CSI0/CSI2, CST128 on `i2c3`, and SDIO Wi-Fi. The first Wi-Fi connection
+configuration attempt failed, automatic retry then connected to `Programmers`
+and acquired `192.168.1.44`; NTP synchronized. No invalid TOC, Page Fault, or
+Illegal Instruction appeared. Subjective smooth-touch acceptance is still
+pending user operation; controller initialization is not proof of touch feel.
+
 ## 6. Troubleshooting
 
 | Symptom | Meaning and action |
 | --- | --- |
 | LYNX rejects the selected file | Confirm that it is the uncompressed full `.img`; decompress `.img.gz` first |
-| `K230 boot: invalid TOC entry 1` | The image is v1.0.0, stale, damaged, or incorrectly generated. Stop using it, validate a v1.0.1/v0.7.6 full `.img`, and reflash it to `EMMC(SDIO0)` at offset 0 |
+| `K230 boot: invalid TOC entry 1` | The image is v1.0.0, stale, damaged, or incorrectly generated. Stop using it, validate a v1.0.2/v0.7.7 full `.img`, and reflash it to `EMMC(SDIO0)` at offset 0 |
 | `K230 boot: invalid TOC` after a passing local check | Verify the exact file passed to LYNX, its release hash, target medium, offset, and LYNX write verification; then reflash the complete image |
 | `no mkimage signature but raw image not supported` after an eMMC boot failure | U-Boot fell through to another medium after failing to load the factory layout. Reflash the validated full `.img`; do not flash the OTA KDIMG |
 | `HS200 tuning failed` followed by 52 MHz selection | The supported fallback succeeded; continue diagnosing later messages rather than treating this line as fatal |

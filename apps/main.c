@@ -79,7 +79,8 @@
 #define PAINT_CANVAS_HEIGHT 350
 #define PAINT_TOUCH_DEBUG 0
 #define UI_TOUCH_DEBUG 0
-#define WIFI_KEYBOARD_DEBUG 1
+#define WIFI_KEYBOARD_DEBUG 0
+#define EDGEOS_SOFTWARE_RENDER_FAST_PATH 1
 #define PAINT_RECONNECT_MS 100U
 #define PAINT_RECONNECT_DISTANCE 80
 #define TAP_GUARD_DISTANCE LV_K230_TOUCH_DRAG_THRESHOLD
@@ -1250,6 +1251,7 @@ static lv_obj_t *g_ai_scene_title;
 static lv_obj_t *g_ai_scene_subtitle;
 static lv_obj_t *g_ai_scene_content;
 static lv_obj_t *g_paint_canvas;
+static lv_draw_buf_t *g_paint_draw_buf;
 static void *g_paint_buffer;
 static lv_color_t g_paint_color;
 static int g_paint_radius = 4;
@@ -2222,11 +2224,19 @@ static lv_obj_t *create_app_button(lv_obj_t *parent, const app_info_t *app,
     lv_obj_set_style_bg_grad_dir(icon, LV_GRAD_DIR_NONE, 0);
     lv_obj_set_style_pad_all(icon, 0, 0);
     lv_obj_set_style_border_width(icon, 0, 0);
+#if EDGEOS_SOFTWARE_RENDER_FAST_PATH
+    /* The rotated K230 display currently uses a full-frame software draw.
+     * Blurring a shadow around every visible icon is disproportionately
+     * expensive while the grid moves, so use the same clean flat icon style
+     * as the rest of the controls. */
+    lv_obj_set_style_shadow_width(icon, 0, 0);
+#else
     lv_obj_set_style_shadow_width(icon, 14, 0);
     lv_obj_set_style_shadow_spread(icon, 0, 0);
     lv_obj_set_style_shadow_offset_y(icon, 5, 0);
     lv_obj_set_style_shadow_color(icon, lv_color_hex(0x4A5568), 0);
     lv_obj_set_style_shadow_opa(icon, LV_OPA_10, 0);
+#endif
     lv_obj_remove_flag(icon, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *artwork = lv_image_create(icon);
@@ -2287,6 +2297,12 @@ static void create_app_launch_overlay(lv_obj_t *screen)
 
 static void create_material_background(lv_obj_t *screen)
 {
+#if EDGEOS_SOFTWARE_RENDER_FAST_PATH
+    /* Keep the opaque screen color as the desktop background.  The two old
+     * half-transparent 500 px circles forced hundreds of thousands of alpha
+     * blends on every FULL-rendered scroll frame. */
+    (void)screen;
+#else
     /* Soft tonal shapes keep the home screen light without competing with
      * the application icons. They are ordinary LVGL objects so the desktop
      * stays resolution-independent and adds no bitmap assets to firmware. */
@@ -2309,6 +2325,7 @@ static void create_material_background(lv_obj_t *screen)
     lv_obj_set_style_bg_opa(green_shape, LV_OPA_60, 0);
     lv_obj_remove_flag(green_shape,
                        LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+#endif
 }
 
 static void create_status_bar(lv_obj_t *screen)
@@ -2318,7 +2335,7 @@ static void create_status_bar(lv_obj_t *screen)
     lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
     style_plain(bar);
     lv_obj_set_style_bg_color(bar, lv_color_hex(0xFCFBF7), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_90, 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
 
     /* Android-style status: time on the left, compact system glyphs on the
@@ -3613,16 +3630,31 @@ static void paint_line(int x0, int y0, int x1, int y1)
         }
     }
     /* Redrawing the complete 600x350 canvas for every MOVE makes the brush
-     * visibly trail the finger. Only invalidate the pixels touched by this
-     * segment, expressed in the canvas' absolute screen coordinates. */
-    lv_area_t dirty;
-    lv_obj_get_coords(g_paint_canvas, &dirty);
-    dirty.x1 += dirty_x1 - g_paint_radius - 1;
-    dirty.y1 += dirty_y1 - g_paint_radius - 1;
-    dirty.x2 = dirty.x1 + (dirty_x2 - dirty_x1) +
-               2 * (g_paint_radius + 1);
-    dirty.y2 = dirty.y1 + (dirty_y2 - dirty_y1) +
-               2 * (g_paint_radius + 1);
+     * visibly trail the finger. Flush and invalidate only the pixels touched
+     * by this segment. The active draw-buffer handler decides whether a cache
+     * clean is required; the software renderer safely treats it as a no-op. */
+    lv_area_t local_dirty = {
+        .x1 = dirty_x1 - g_paint_radius - 1,
+        .y1 = dirty_y1 - g_paint_radius - 1,
+        .x2 = dirty_x2 + g_paint_radius + 1,
+        .y2 = dirty_y2 + g_paint_radius + 1,
+    };
+    if (local_dirty.x1 < 0) local_dirty.x1 = 0;
+    if (local_dirty.y1 < 0) local_dirty.y1 = 0;
+    if (local_dirty.x2 >= PAINT_CANVAS_WIDTH)
+        local_dirty.x2 = PAINT_CANVAS_WIDTH - 1;
+    if (local_dirty.y2 >= PAINT_CANVAS_HEIGHT)
+        local_dirty.y2 = PAINT_CANVAS_HEIGHT - 1;
+    lv_draw_buf_flush_cache(g_paint_draw_buf, &local_dirty);
+
+    lv_area_t canvas_coords;
+    lv_obj_get_coords(g_paint_canvas, &canvas_coords);
+    lv_area_t dirty = {
+        .x1 = canvas_coords.x1 + local_dirty.x1,
+        .y1 = canvas_coords.y1 + local_dirty.y1,
+        .x2 = canvas_coords.x1 + local_dirty.x2,
+        .y2 = canvas_coords.y1 + local_dirty.y2,
+    };
     lv_obj_invalidate_area(g_paint_canvas, &dirty);
 }
 
@@ -3805,19 +3837,19 @@ static void create_paint_view(lv_obj_t *screen)
                         (void *)(uintptr_t)0xFFFFFF);
 
     g_paint_canvas = lv_canvas_create(g_paint_view);
-    size_t buffer_size =
-        lv_canvas_buf_size(PAINT_CANVAS_WIDTH, PAINT_CANVAS_HEIGHT, 16,
-                           LV_DRAW_BUF_STRIDE_ALIGN);
-    g_paint_buffer = lv_malloc_zeroed(buffer_size);
-    if (g_paint_buffer == NULL) {
+    /* Allocate with the active LVGL draw-buffer handlers so allocation size,
+     * stride, alignment and destruction always remain a matched set. */
+    g_paint_draw_buf =
+        lv_draw_buf_create(PAINT_CANVAS_WIDTH, PAINT_CANVAS_HEIGHT,
+                           LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    if (g_paint_draw_buf == NULL) {
         lv_obj_t *error =
             make_label(g_paint_view, "Unable to allocate drawing canvas",
                        &lv_font_montserrat_20, 0xB91C1C);
         lv_obj_center(error);
     } else {
-        lv_canvas_set_buffer(g_paint_canvas, g_paint_buffer,
-                             PAINT_CANVAS_WIDTH, PAINT_CANVAS_HEIGHT,
-                             LV_COLOR_FORMAT_RGB565);
+        g_paint_buffer = g_paint_draw_buf->data;
+        lv_canvas_set_draw_buf(g_paint_canvas, g_paint_draw_buf);
         lv_obj_set_pos(g_paint_canvas, 20, 78);
         lv_canvas_fill_bg(g_paint_canvas, lv_color_hex(0xFFFFFF),
                           LV_OPA_COVER);
@@ -5970,6 +6002,7 @@ static void wifi_refresh_list(void)
 static void wifi_update_network_status(void)
 {
     struct ifconfig_t config;
+    char next_ip[sizeof(g_wifi_ip)] = "";
 
     memset(&config, 0, sizeof(config));
     /* A valid interface address is authoritative even if the WLAN status
@@ -5977,24 +6010,31 @@ static void wifi_update_network_status(void)
     if (netmgmt_utils_get_ifconfig(RT_NET_DEV_WLAN_STA, &config) == 0 &&
         config.ip.addr != 0) {
         const uint8_t *octet = (const uint8_t *)&config.ip.addr;
-        snprintf(g_wifi_ip, sizeof(g_wifi_ip), "%u.%u.%u.%u",
+        snprintf(next_ip, sizeof(next_ip), "%u.%u.%u.%u",
                  octet[0], octet[1], octet[2], octet[3]);
+        if (strcmp(g_wifi_ip, next_ip) != 0)
+            snprintf(g_wifi_ip, sizeof(g_wifi_ip), "%s", next_ip);
         if (g_wifi_status != NULL) {
-            lv_label_set_text(g_wifi_status,
-                                  g_system_settings.wifi_ssid[0] != '\0'
-                                  ? g_system_settings.wifi_ssid
-                                  : settings_text("Connected"));
+            const char *status = g_system_settings.wifi_ssid[0] != '\0'
+                                     ? g_system_settings.wifi_ssid
+                                     : settings_text("Connected");
+            if (strcmp(lv_label_get_text(g_wifi_status), status) != 0)
+                lv_label_set_text(g_wifi_status, status);
         }
         if (g_wifi_ip_label != NULL) {
             char text[80];
             snprintf(text, sizeof(text), settings_text("IP Address  %s"),
                      g_wifi_ip);
-            lv_label_set_text(g_wifi_ip_label, text);
+            if (strcmp(lv_label_get_text(g_wifi_ip_label), text) != 0)
+                lv_label_set_text(g_wifi_ip_label, text);
         }
     } else {
-        g_wifi_ip[0] = '\0';
+        if (g_wifi_ip[0] != '\0')
+            g_wifi_ip[0] = '\0';
         if (g_wifi_ip_label != NULL) {
-            lv_label_set_text(g_wifi_ip_label, settings_text("Not Connected"));
+            const char *status = settings_text("Not Connected");
+            if (strcmp(lv_label_get_text(g_wifi_ip_label), status) != 0)
+                lv_label_set_text(g_wifi_ip_label, status);
         }
     }
 }
@@ -6010,6 +6050,14 @@ static bool wifi_network_ready(void)
            config.ip.addr != 0;
 }
 
+static bool ui_pointer_motion_active(void)
+{
+    if (g_touch_indev == NULL)
+        return false;
+    return lv_indev_get_state(g_touch_indev) == LV_INDEV_STATE_PRESSED ||
+           lv_indev_get_scroll_obj(g_touch_indev) != NULL;
+}
+
 static void desktop_status_update(void)
 {
     char text[32];
@@ -6017,28 +6065,46 @@ static void desktop_status_update(void)
     struct tm local;
     localtime_r(&now, &local);
     strftime(text, sizeof(text), "%H:%M", &local);
-    if (g_desktop_time_status != NULL)
+    if (g_desktop_time_status != NULL &&
+        strcmp(lv_label_get_text(g_desktop_time_status), text) != 0)
         lv_label_set_text(g_desktop_time_status, text);
-    if (g_desktop_network_status != NULL)
-        lv_label_set_text(g_desktop_network_status,
-                          LV_SYMBOL_WIFI "   " LV_SYMBOL_DRIVE "   "
-                          LV_SYMBOL_VIDEO);
+    if (g_desktop_network_status != NULL) {
+        const char *status = LV_SYMBOL_WIFI "   " LV_SYMBOL_DRIVE "   "
+                             LV_SYMBOL_VIDEO;
+        if (strcmp(lv_label_get_text(g_desktop_network_status), status) != 0)
+            lv_label_set_text(g_desktop_network_status, status);
+    }
     if (g_desktop_ip_status != NULL) {
         if (g_wifi_ip[0] != '\0') {
-            lv_label_set_text(g_desktop_ip_status, g_wifi_ip);
-            lv_obj_remove_flag(g_desktop_ip_status, LV_OBJ_FLAG_HIDDEN);
+            bool text_changed =
+                strcmp(lv_label_get_text(g_desktop_ip_status),
+                       g_wifi_ip) != 0;
+            bool was_hidden = lv_obj_has_flag(g_desktop_ip_status,
+                                               LV_OBJ_FLAG_HIDDEN);
+            if (text_changed)
+                lv_label_set_text(g_desktop_ip_status, g_wifi_ip);
+            if (was_hidden)
+                lv_obj_remove_flag(g_desktop_ip_status,
+                                   LV_OBJ_FLAG_HIDDEN);
+            if (text_changed || was_hidden)
+                lv_obj_align_to(g_desktop_ip_status,
+                                g_desktop_network_status,
+                                LV_ALIGN_OUT_LEFT_MID, -12, 0);
         } else {
-            lv_label_set_text(g_desktop_ip_status, "");
-            lv_obj_add_flag(g_desktop_ip_status, LV_OBJ_FLAG_HIDDEN);
+            if (lv_label_get_text(g_desktop_ip_status)[0] != '\0')
+                lv_label_set_text(g_desktop_ip_status, "");
+            if (!lv_obj_has_flag(g_desktop_ip_status,
+                                 LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(g_desktop_ip_status,
+                                LV_OBJ_FLAG_HIDDEN);
         }
-        lv_obj_align_to(g_desktop_ip_status, g_desktop_network_status,
-                        LV_ALIGN_OUT_LEFT_MID, -12, 0);
     }
 }
 
 static void wifi_timer_cb(lv_timer_t *timer)
 {
     static unsigned network_poll;
+    bool pointer_motion;
     int completed;
     int result;
     pthread_mutex_lock(&g_wifi_lock);
@@ -6095,21 +6161,29 @@ static void wifi_timer_cb(lv_timer_t *timer)
     }
     if (g_wifi_scan_requested && !wifi_is_busy())
         wifi_scan_start();
-    if (++network_poll >= 2) {
+    pointer_motion = ui_pointer_motion_active();
+    if (network_poll < 2)
+        ++network_poll;
+    /* Network ioctls, settings labels and OTA snapshots are housekeeping,
+     * not input work.  Defer them while a finger or momentum owns a scroll
+     * object so they cannot insert a periodic stall into a desktop swipe. */
+    if (network_poll >= 2 && !pointer_motion) {
         network_poll = 0;
         wifi_update_network_status();
         desktop_status_update();
         wifi_autoconnect_start();
     }
-    if (g_date_status != NULL) {
+    if (!pointer_motion && g_date_status != NULL) {
         time_t now = time(NULL);
         struct tm local;
         char text[96];
         localtime_r(&now, &local);
         strftime(text, sizeof(text), "%Y-%m-%d  %H:%M:%S", &local);
-        lv_label_set_text(g_date_status, text);
+        if (strcmp(lv_label_get_text(g_date_status), text) != 0)
+            lv_label_set_text(g_date_status, text);
     }
-    ota_refresh_ui();
+    if (!pointer_motion)
+        ota_refresh_ui();
 }
 
 static void wifi_scan_cb(lv_event_t *event)
@@ -6200,6 +6274,7 @@ static void wifi_keyboard_value_changed_cb(lv_event_t *event)
     lv_obj_t *keyboard = lv_event_get_current_target(event);
     uint32_t button = lv_buttonmatrix_get_selected_button(keyboard);
     const char *key = lv_buttonmatrix_get_button_text(keyboard, button);
+#if WIFI_KEYBOARD_DEBUG
     uint32_t now = lv_tick_get();
     const char *kind = strcmp(key ? key : "", LV_SYMBOL_BACKSPACE) == 0
                            ? "backspace"
@@ -6210,6 +6285,7 @@ static void wifi_keyboard_value_changed_cb(lv_event_t *event)
                                   !strcmp(key, LV_SYMBOL_KEYBOARD)))
                            ? "mode"
                            : "character";
+#endif
 
     if (key == NULL) return;
 
@@ -7098,7 +7174,9 @@ static void ota_refresh_ui(void)
     uint32_t progress_color = 0x169C92;
     bool active;
 
-    if (g_ota_status_label == NULL || g_ota_progress == NULL)
+    if (g_ota_status_label == NULL || g_ota_progress == NULL ||
+        (g_settings_view != NULL &&
+         lv_obj_has_flag(g_settings_view, LV_OBJ_FLAG_HIDDEN)))
         return;
     dshanpi_ota_get_snapshot(&snapshot);
     switch (snapshot.state) {
@@ -7169,24 +7247,38 @@ static void ota_refresh_ui(void)
         status = settings_text("Ready to update");
         break;
     }
-    lv_label_set_text(g_ota_status_label, status);
-    lv_obj_set_style_text_color(g_ota_status_label,
-                                lv_color_hex(status_color), 0);
-    lv_bar_set_value(g_ota_progress, (int32_t)snapshot.progress,
-                     LV_ANIM_ON);
-    lv_obj_set_style_bg_color(g_ota_progress,
-                              lv_color_hex(progress_color),
-                              LV_PART_INDICATOR);
+    if (strcmp(lv_label_get_text(g_ota_status_label), status) != 0)
+        lv_label_set_text(g_ota_status_label, status);
+    if (!lv_color_eq(lv_obj_get_style_text_color(g_ota_status_label, 0),
+                     lv_color_hex(status_color)))
+        lv_obj_set_style_text_color(g_ota_status_label,
+                                    lv_color_hex(status_color), 0);
+    if (lv_bar_get_value(g_ota_progress) != (int32_t)snapshot.progress)
+        lv_bar_set_value(g_ota_progress, (int32_t)snapshot.progress,
+                         LV_ANIM_ON);
+    if (!lv_color_eq(lv_obj_get_style_bg_color(g_ota_progress,
+                                                LV_PART_INDICATOR),
+                     lv_color_hex(progress_color)))
+        lv_obj_set_style_bg_color(g_ota_progress,
+                                  lv_color_hex(progress_color),
+                                  LV_PART_INDICATOR);
     if (g_ota_progress_label != NULL) {
         snprintf(progress_text, sizeof(progress_text), "%u%%",
                  snapshot.progress);
-        lv_label_set_text(g_ota_progress_label, progress_text);
-        lv_obj_set_style_text_color(g_ota_progress_label,
-                                    lv_color_hex(status_color), 0);
+        if (strcmp(lv_label_get_text(g_ota_progress_label),
+                   progress_text) != 0)
+            lv_label_set_text(g_ota_progress_label, progress_text);
+        if (!lv_color_eq(lv_obj_get_style_text_color(g_ota_progress_label,
+                                                      0),
+                         lv_color_hex(status_color)))
+            lv_obj_set_style_text_color(g_ota_progress_label,
+                                        lv_color_hex(status_color), 0);
     }
     if (g_ota_network_button_label != NULL) {
-        lv_label_set_text(g_ota_network_button_label,
-                          settings_text("Network download"));
+        const char *label = settings_text("Network download");
+        if (strcmp(lv_label_get_text(g_ota_network_button_label),
+                   label) != 0)
+            lv_label_set_text(g_ota_network_button_label, label);
     }
     active = snapshot.busy ||
              snapshot.state == DSHANPI_OTA_CHECKING ||
@@ -7196,9 +7288,12 @@ static void ota_refresh_ui(void)
              snapshot.state == DSHANPI_OTA_INSTALLING ||
              snapshot.state == DSHANPI_OTA_REBOOTING;
     if (g_ota_network_button != NULL) {
-        if (active || snapshot.state == DSHANPI_OTA_READY)
+        bool disabled = active || snapshot.state == DSHANPI_OTA_READY;
+        bool was_disabled = lv_obj_has_state(g_ota_network_button,
+                                              LV_STATE_DISABLED);
+        if (disabled && !was_disabled)
             lv_obj_add_state(g_ota_network_button, LV_STATE_DISABLED);
-        else
+        else if (!disabled && was_disabled)
             lv_obj_remove_state(g_ota_network_button, LV_STATE_DISABLED);
     }
 }
@@ -10463,6 +10558,12 @@ static void gallery_load_timer_cb(lv_timer_t *timer)
         lv_obj_has_flag(g_gallery_view, LV_OBJ_FLAG_HIDDEN))
         return;
 
+    /* JPEG thumbnail decode is synchronous on this SDK.  Never start one
+     * while the finger is down or LVGL is still applying scroll momentum;
+     * the timer will resume naturally as soon as interaction settles. */
+    if (ui_pointer_motion_active())
+        return;
+
     if (g_gallery_rendered_count < g_gallery_media_count) {
         gallery_append_media_card(g_gallery_rendered_count);
         ++g_gallery_rendered_count;
@@ -12425,6 +12526,8 @@ static int desktop_main(void)
         g_launch_self_learning = false;
         g_launch_cloud_model = false;
         g_launch_uvc_camera = false;
+        g_paint_canvas = NULL;
+        g_paint_draw_buf = NULL;
         g_paint_buffer = NULL;
 
         printf("K230 LVGL launcher: GC2093 CSI%d (%s), ST7701 640x480\n",
@@ -12458,11 +12561,11 @@ static int desktop_main(void)
         lv_timer_set_period(lv_display_get_refr_timer(g_display), 23);
         g_touch_indev = lv_k230_touch_init(0);
         if (g_touch_indev != NULL) {
-            /* Keep only 2% velocity decay per refresh so a deliberate fast
-             * swipe can coast through the full desktop application list.
-             * Slow drags remain controllable, while the grid's elastic edge
-             * resistance absorbs the remaining velocity and rebounds. */
-            lv_indev_set_scroll_throw(g_touch_indev, 2);
+            /* A small amount of momentum keeps the list fluid, while 8%
+             * decay stops it promptly enough for the next tap or reverse
+             * swipe.  The old 2% value coasted for too long and made the
+             * desktop feel as if it was still ignoring the user. */
+            lv_indev_set_scroll_throw(g_touch_indev, 8);
         }
         create_ui();
         if (screenshot_notification_consume())
@@ -12494,9 +12597,16 @@ static int desktop_main(void)
         lv_refr_now(NULL);
         dshanpi_ota_confirm_boot_after_health_delay();
 
+        uint32_t ota_heartbeat_tick = lv_tick_get();
         while (!g_stop) {
             uint32_t delay_ms = lv_timer_handler();
-            dshanpi_ota_report_ui_heartbeat();
+            /* The OTA health worker checks progress every two seconds.  A
+             * 250 ms heartbeat is comfortably faster than that while
+             * avoiding a mutex lock on every 5 ms UI/input iteration. */
+            if (lv_tick_elaps(ota_heartbeat_tick) >= 250U) {
+                ota_heartbeat_tick = lv_tick_get();
+                dshanpi_ota_report_ui_heartbeat();
+            }
             if (g_screenshot_saved_pending) {
                 g_screenshot_saved_pending = 0;
                 screenshot_notification_consume();
@@ -12528,18 +12638,16 @@ static int desktop_main(void)
         dshanpi_camera_stop();
         dshanpi_dual_camera_stop();
         uart_lab_stop();
-        /*
-         * The canvas owns an externally allocated buffer. Delete the object
-         * first so LVGL cannot touch that buffer during display teardown.
-         */
-        if (g_paint_buffer != NULL) {
-            if (g_paint_canvas != NULL) {
-                lv_obj_delete(g_paint_canvas);
-                g_paint_canvas = NULL;
-            }
-            lv_free(g_paint_buffer);
-            g_paint_buffer = NULL;
+        /* Delete the canvas before releasing its referenced draw buffer. */
+        if (g_paint_canvas != NULL) {
+            lv_obj_delete(g_paint_canvas);
+            g_paint_canvas = NULL;
         }
+        if (g_paint_draw_buf != NULL) {
+            lv_draw_buf_destroy(g_paint_draw_buf);
+            g_paint_draw_buf = NULL;
+        }
+        g_paint_buffer = NULL;
 
         /*
          * The K230 display port releases its OSD VB blocks from the display

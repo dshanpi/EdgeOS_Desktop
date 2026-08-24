@@ -1,0 +1,498 @@
+From 7fcc31b2e0050a0f86284fa9e9cd587355a60e63 Mon Sep 17 00:00:00 2001
+From: DshanPI EdgeOS SDK <sdk@dshanpi.com>
+Date: Mon, 24 Aug 2026 06:04:03 -0400
+Subject: [PATCH 5/6] feat(board): restore DongshanPI EdgeOS boot profile
+
+---
+ kernel/bsp/maix3/app_canmv/main.c             | 324 ++++++++++++++++++
+ .../k230_canmv_dongshanpi_edgeos_defconfig    | 124 +++++++
+ 2 files changed, 448 insertions(+)
+ create mode 100644 kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig
+
+diff --git a/kernel/bsp/maix3/app_canmv/main.c b/kernel/bsp/maix3/app_canmv/main.c
+index 78c818d..cab229f 100644
+--- a/kernel/bsp/maix3/app_canmv/main.c
++++ b/kernel/bsp/maix3/app_canmv/main.c
+@@ -38,6 +38,32 @@
+ #define K230_TRUSTED_PRELOAD_CMD "@preload"
+ #define MMCSD_CARD_DETECT_TIMEOUT_MS 600
+ 
++#if defined(CONFIG_BOARD_K230_CANMV_DONGSHANPI) && \
++    defined(CONFIG_APP_ENABLE_EDGEOS_DESKTOP)
++#define DONGSHANPI_EDGEOS_BOOT 1
++#define DONGSHANPI_DEVELOPER_KEY_PIN            18
++#define DONGSHANPI_MODE_TOGGLE_KEY_PIN          29
++#define DONGSHANPI_KEY_SAMPLE_MS                10
++#define DONGSHANPI_KEY_DEBOUNCE_SAMPLES         5
++#define DONGSHANPI_KEY_DEBOUNCE_PRESS_COUNT     4
++#define DONGSHANPI_KEY3_HOLD_SAMPLES            200
++#define DONGSHANPI_BOOT_MODE_PATH               "/data/boot_mode.conf"
++#define DONGSHANPI_BOOT_MODE_TEMP_PATH          "/data/boot_mode.tmp"
++#define DONGSHANPI_BOOT_MODE_BACKUP_PATH        "/data/boot_mode.bak"
++#define DONGSHANPI_EDGEOS_LAUNCHER_PATH         "/sdcard/app/dshanpi_aimodel"
++
++typedef enum {
++    DONGSHANPI_BOOT_MODE_AI = 0,
++    DONGSHANPI_BOOT_MODE_DEVELOPER,
++} dongshanpi_boot_mode_t;
++
++typedef enum {
++    DONGSHANPI_BOOT_KEY_NONE = 0,
++    DONGSHANPI_BOOT_KEY_FORCE_DEVELOPER,
++    DONGSHANPI_BOOT_KEY_TOGGLE_DEFAULT,
++} dongshanpi_boot_key_action_t;
++#endif
++
+ #ifdef RT_USING_SDIO
+ extern int kd_sdhci_wait_card(int id, int timeout);
+ #endif
+@@ -346,11 +372,275 @@ static void auto_exec_trusted_preload(const char *cmd_line)
+   rt_free(cmd_copy);
+ }
+ 
++#ifdef DONGSHANPI_EDGEOS_BOOT
++static const char *dongshanpi_boot_mode_name(dongshanpi_boot_mode_t mode)
++{
++  return mode == DONGSHANPI_BOOT_MODE_DEVELOPER ? "Developer" : "AI";
++}
++
++static dongshanpi_boot_key_action_t dongshanpi_read_boot_keys(void)
++{
++  int key2_pressed_count = 0;
++  int key3_pressed_count = 0;
++  rt_bool_t key3_available = RT_TRUE;
++
++  if (kd_pin_mode(DONGSHANPI_DEVELOPER_KEY_PIN,
++                  GPIO_DM_INPUT_PULLUP) != RT_EOK) {
++    rt_kprintf("KEY2: failed to configure GPIO%d; force Developer mode\n",
++               DONGSHANPI_DEVELOPER_KEY_PIN);
++    return DONGSHANPI_BOOT_KEY_FORCE_DEVELOPER;
++  }
++
++  if (kd_pin_mode(DONGSHANPI_MODE_TOGGLE_KEY_PIN,
++                  GPIO_DM_INPUT_PULLUP) != RT_EOK) {
++    rt_kprintf("KEY3: failed to configure GPIO%d; mode switching disabled\n",
++               DONGSHANPI_MODE_TOGGLE_KEY_PIN);
++    key3_available = RT_FALSE;
++  }
++
++  for (int i = 0; i < DONGSHANPI_KEY_DEBOUNCE_SAMPLES; i++) {
++    if (kd_pin_read(DONGSHANPI_DEVELOPER_KEY_PIN) == GPIO_PV_LOW) {
++      key2_pressed_count++;
++    }
++    if (key3_available &&
++        kd_pin_read(DONGSHANPI_MODE_TOGGLE_KEY_PIN) == GPIO_PV_LOW) {
++      key3_pressed_count++;
++    }
++    rt_thread_mdelay(DONGSHANPI_KEY_SAMPLE_MS);
++  }
++
++  if (key2_pressed_count >= DONGSHANPI_KEY_DEBOUNCE_PRESS_COUNT) {
++    rt_kprintf("KEY2 pressed: force Developer mode for this boot\n");
++    return DONGSHANPI_BOOT_KEY_FORCE_DEVELOPER;
++  }
++
++  if (key3_pressed_count < DONGSHANPI_KEY_DEBOUNCE_PRESS_COUNT) {
++    return DONGSHANPI_BOOT_KEY_NONE;
++  }
++
++  rt_kprintf("KEY3 pressed: keep holding to switch the default boot mode\n");
++  for (int i = DONGSHANPI_KEY_DEBOUNCE_SAMPLES;
++       i < DONGSHANPI_KEY3_HOLD_SAMPLES; i++) {
++    if (kd_pin_read(DONGSHANPI_MODE_TOGGLE_KEY_PIN) != GPIO_PV_LOW) {
++      rt_kprintf("KEY3 released before 2 seconds: mode unchanged\n");
++      return DONGSHANPI_BOOT_KEY_NONE;
++    }
++    rt_thread_mdelay(DONGSHANPI_KEY_SAMPLE_MS);
++  }
++
++  rt_kprintf("KEY3 long press detected: toggle the default boot mode\n");
++  return DONGSHANPI_BOOT_KEY_TOGGLE_DEFAULT;
++}
++
++static int dongshanpi_read_boot_mode_file(
++    const char *path, dongshanpi_boot_mode_t *mode)
++{
++  char buffer[16];
++  int bytes_read;
++  int fd;
++
++  fd = open(path, O_RDONLY, 0);
++  if (fd < 0) {
++    return -RT_ERROR;
++  }
++
++  rt_memset(buffer, 0, sizeof(buffer));
++  bytes_read = read(fd, buffer, sizeof(buffer) - 1);
++  close(fd);
++  if (bytes_read <= 0) {
++    return -RT_ERROR;
++  }
++
++  while (bytes_read > 0 &&
++         (buffer[bytes_read - 1] == '\n' ||
++          buffer[bytes_read - 1] == '\r' ||
++          buffer[bytes_read - 1] == ' ' ||
++          buffer[bytes_read - 1] == '\t')) {
++    buffer[--bytes_read] = '\0';
++  }
++
++  if (rt_strcmp(buffer, "ai") == 0) {
++    *mode = DONGSHANPI_BOOT_MODE_AI;
++    return RT_EOK;
++  }
++  if (rt_strcmp(buffer, "developer") == 0) {
++    *mode = DONGSHANPI_BOOT_MODE_DEVELOPER;
++    return RT_EOK;
++  }
++
++  return -RT_ERROR;
++}
++
++static dongshanpi_boot_mode_t dongshanpi_load_default_boot_mode(void)
++{
++  dongshanpi_boot_mode_t mode;
++
++  if (!g_fs_mount_data_succ) {
++    rt_kprintf("/data is unavailable; default boot mode is AI\n");
++    return DONGSHANPI_BOOT_MODE_AI;
++  }
++
++  if (dongshanpi_read_boot_mode_file(DONGSHANPI_BOOT_MODE_PATH,
++                                     &mode) == RT_EOK) {
++    return mode;
++  }
++
++  if (dongshanpi_read_boot_mode_file(DONGSHANPI_BOOT_MODE_BACKUP_PATH,
++                                     &mode) == RT_EOK) {
++    /* A power loss may leave only the valid backup. Recover it in place. */
++    if ((access(DONGSHANPI_BOOT_MODE_PATH, F_OK) != 0 ||
++         unlink(DONGSHANPI_BOOT_MODE_PATH) == 0) &&
++        rename(DONGSHANPI_BOOT_MODE_BACKUP_PATH,
++               DONGSHANPI_BOOT_MODE_PATH) == 0) {
++      rt_kprintf("Recovered boot mode configuration from backup\n");
++    } else {
++      rt_kprintf("Using backup boot mode configuration\n");
++    }
++    return mode;
++  }
++
++  if (access(DONGSHANPI_BOOT_MODE_PATH, F_OK) == 0) {
++    rt_kprintf("Invalid boot mode configuration; default to AI\n");
++  } else {
++    rt_kprintf("Boot mode configuration not found; default to AI\n");
++  }
++  return DONGSHANPI_BOOT_MODE_AI;
++}
++
++static int dongshanpi_save_default_boot_mode(dongshanpi_boot_mode_t mode)
++{
++  const char *value = mode == DONGSHANPI_BOOT_MODE_DEVELOPER
++                    ? "developer\n" : "ai\n";
++  dongshanpi_boot_mode_t ignored_mode;
++  rt_bool_t backup_valid;
++  rt_bool_t main_exists;
++  rt_bool_t main_valid;
++  int total_written = 0;
++  int value_len = rt_strlen(value);
++  int fd;
++
++  if (!g_fs_mount_data_succ) {
++    rt_kprintf("Cannot save boot mode: /data is unavailable\n");
++    return -RT_ERROR;
++  }
++
++  fd = open(DONGSHANPI_BOOT_MODE_TEMP_PATH,
++            O_WRONLY | O_CREAT | O_TRUNC, 0644);
++  if (fd < 0) {
++    rt_kprintf("Failed to open boot mode temporary file\n");
++    return -RT_ERROR;
++  }
++
++  while (total_written < value_len) {
++    int written = write(fd, value + total_written,
++                        value_len - total_written);
++    if (written <= 0) {
++      break;
++    }
++    total_written += written;
++  }
++  if (total_written != value_len || fsync(fd) != 0) {
++    rt_kprintf("Failed to write boot mode configuration\n");
++    close(fd);
++    unlink(DONGSHANPI_BOOT_MODE_TEMP_PATH);
++    return -RT_ERROR;
++  }
++  close(fd);
++
++  /*
++   * ELM/FAT rename cannot replace an existing destination. Keep the last
++   * known-good file until the new main file has been committed.
++   */
++  main_exists = access(DONGSHANPI_BOOT_MODE_PATH, F_OK) == 0;
++  main_valid = dongshanpi_read_boot_mode_file(DONGSHANPI_BOOT_MODE_PATH,
++                                               &ignored_mode) == RT_EOK;
++  backup_valid = dongshanpi_read_boot_mode_file(
++                     DONGSHANPI_BOOT_MODE_BACKUP_PATH,
++                     &ignored_mode) == RT_EOK;
++
++  if (main_valid) {
++    if ((access(DONGSHANPI_BOOT_MODE_BACKUP_PATH, F_OK) == 0 &&
++         unlink(DONGSHANPI_BOOT_MODE_BACKUP_PATH) != 0) ||
++        rename(DONGSHANPI_BOOT_MODE_PATH,
++               DONGSHANPI_BOOT_MODE_BACKUP_PATH) != 0) {
++      rt_kprintf("Failed to back up the existing boot mode configuration\n");
++      unlink(DONGSHANPI_BOOT_MODE_TEMP_PATH);
++      return -RT_ERROR;
++    }
++    backup_valid = RT_TRUE;
++  } else if (main_exists && unlink(DONGSHANPI_BOOT_MODE_PATH) != 0) {
++    rt_kprintf("Failed to remove invalid boot mode configuration\n");
++    unlink(DONGSHANPI_BOOT_MODE_TEMP_PATH);
++    return -RT_ERROR;
++  } else if (!backup_valid) {
++    unlink(DONGSHANPI_BOOT_MODE_BACKUP_PATH);
++  }
++
++  if (rename(DONGSHANPI_BOOT_MODE_TEMP_PATH,
++             DONGSHANPI_BOOT_MODE_PATH) != 0) {
++    rt_kprintf("Failed to commit boot mode configuration\n");
++    unlink(DONGSHANPI_BOOT_MODE_TEMP_PATH);
++    if (backup_valid &&
++        access(DONGSHANPI_BOOT_MODE_PATH, F_OK) != 0 &&
++        rename(DONGSHANPI_BOOT_MODE_BACKUP_PATH,
++               DONGSHANPI_BOOT_MODE_PATH) != 0) {
++      rt_kprintf("Failed to restore the previous boot mode configuration\n");
++    }
++    return -RT_ERROR;
++  }
++
++  unlink(DONGSHANPI_BOOT_MODE_BACKUP_PATH);
++  return RT_EOK;
++}
++
++static pid_t dongshanpi_start_edgeos(void)
++{
++#ifdef CONFIG_SECURE_BOOT_FIRMWARE_ENABLE
++  rt_kprintf("EdgeOS filesystem launcher is unavailable under secure boot\n");
++  return -1;
++#else
++  static char launcher_path[] = DONGSHANPI_EDGEOS_LAUNCHER_PATH;
++  static char background[] = "&";
++  char *argv[] = {launcher_path, background, RT_NULL};
++  pid_t pid;
++
++  if (!g_fs_mount_sdcard_succ) {
++    rt_kprintf("/sdcard is unavailable; cannot start EdgeOS\n");
++    return -1;
++  }
++  if (access(launcher_path, F_OK) != 0) {
++    rt_kprintf(DONGSHANPI_EDGEOS_LAUNCHER_PATH " not found\n");
++    return -1;
++  }
++
++  rt_kprintf("Starting " DONGSHANPI_EDGEOS_LAUNCHER_PATH "\n");
++  pid = exec(launcher_path, 0, 2, argv);
++  if (pid <= 0) {
++    rt_kprintf("Failed to start EdgeOS (exec returned %d)\n", pid);
++    return -1;
++  }
++
++  rt_kprintf("EdgeOS launcher started (pid=%d)\n", pid);
++  return pid;
++#endif
++}
++#endif
++
+ int main(void) {
++#ifdef DONGSHANPI_EDGEOS_BOOT
++  dongshanpi_boot_key_action_t boot_key_action = DONGSHANPI_BOOT_KEY_NONE;
++  dongshanpi_boot_mode_t boot_mode = DONGSHANPI_BOOT_MODE_AI;
++#endif
++
+   sysctl_pwr_off(SYSCTL_PD_CPU0);
+   sysctl_pwr_off(SYSCTL_PD_DPU);
+ 
++#ifdef DONGSHANPI_EDGEOS_BOOT
++  boot_key_action = dongshanpi_read_boot_keys();
++#endif
++
+   rt_kprintf("\n#############SDK VERSION######################################\n");
++  rt_kprintf("System: %s\n", SYSTEM_VERSION_);
+   rt_kprintf("SDK   : %s\n", SDK_VERSION_);
+ #ifdef CONFIG_SDK_ENABLE_CANMV
+   rt_kprintf("CanMV : %s\n", CANMV_VERSION_);
+@@ -443,6 +733,40 @@ int main(void) {
+   {
+     size_t cmd_length = rt_strlen(CONFIG_RTT_AUTO_EXEC_CMD);
+ 
++#ifdef DONGSHANPI_EDGEOS_BOOT
++    boot_mode = dongshanpi_load_default_boot_mode();
++    rt_kprintf("Saved default boot mode: %s\n",
++               dongshanpi_boot_mode_name(boot_mode));
++
++    if (boot_key_action == DONGSHANPI_BOOT_KEY_FORCE_DEVELOPER) {
++      boot_mode = DONGSHANPI_BOOT_MODE_DEVELOPER;
++    } else if (boot_key_action == DONGSHANPI_BOOT_KEY_TOGGLE_DEFAULT) {
++      dongshanpi_boot_mode_t new_mode =
++          boot_mode == DONGSHANPI_BOOT_MODE_AI
++          ? DONGSHANPI_BOOT_MODE_DEVELOPER
++          : DONGSHANPI_BOOT_MODE_AI;
++
++      if (dongshanpi_save_default_boot_mode(new_mode) == RT_EOK) {
++        rt_kprintf("Default boot mode changed: %s -> %s\n",
++                   dongshanpi_boot_mode_name(boot_mode),
++                   dongshanpi_boot_mode_name(new_mode));
++        boot_mode = new_mode;
++      } else {
++        rt_kprintf("Default boot mode unchanged because saving failed\n");
++      }
++    }
++
++    rt_kprintf("Selected boot mode: %s\n",
++               dongshanpi_boot_mode_name(boot_mode));
++
++    if (boot_mode == DONGSHANPI_BOOT_MODE_AI) {
++      if (dongshanpi_start_edgeos() > 0) {
++        return 0;
++      }
++      rt_kprintf("EdgeOS AI mode unavailable; fallback to MicroPython\n");
++    }
++#endif
++
+     if(cmd_length) {
+       if (auto_exec_cmd_is_trusted_preload(CONFIG_RTT_AUTO_EXEC_CMD)) {
+         auto_exec_trusted_preload(CONFIG_RTT_AUTO_EXEC_CMD);
+diff --git a/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig b/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig
+new file mode 100644
+index 0000000..b6cc47f
+--- /dev/null
++++ b/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig
+@@ -0,0 +1,124 @@
++# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)
++CONFIG_RT_NAME_MAX=20
++CONFIG_RT_USING_SMART=y
++CONFIG_RT_ALIGN_SIZE=64
++CONFIG_RT_TICK_PER_SECOND=1000
++CONFIG_IDLE_THREAD_STACK_SIZE=16384
++CONFIG_RT_TIMER_THREAD_STACK_SIZE=16384
++CONFIG_RT_USING_SIGNALS=y
++CONFIG_RT_USING_MEMHEAP=y
++CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
++CONFIG_RT_USING_DEVICE_OPS=y
++CONFIG_RT_CONSOLEBUF_SIZE=256
++CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_USING_USERSPACE=y
++CONFIG_KERNEL_VADDR_START=0x150000000
++CONFIG_RT_MAIN_THREAD_STACK_SIZE=16384
++CONFIG_FINSH_THREAD_STACK_SIZE=81920
++CONFIG_FINSH_CMD_SIZE=1024
++CONFIG_FINSH_ARG_MAX=100
++CONFIG_MSH_WAIT_LWP_FINISH=y
++CONFIG_DFS_FILESYSTEMS_MAX=16
++CONFIG_DFS_FILESYSTEM_TYPES_MAX=6
++CONFIG_DFS_FD_MAX=128
++CONFIG_RT_USING_DFS_ELMFAT=y
++CONFIG_RT_DFS_ELM_DRIVES=4
++CONFIG_RT_USING_DFS_ROMFS=y
++CONFIG_RT_USING_DFS_TMPFS=y
++CONFIG_RT_USING_DFS_PROCFS=y
++CONFIG_RT_SYSTEM_WORKQUEUE_STACKSIZE=20480
++CONFIG_RT_SYSTEM_WORKQUEUE_PRIORITY=17
++CONFIG_RT_SERIAL_USING_DMA=y
++CONFIG_RT_USING_HWTIMER=y
++CONFIG_RT_USING_CPUTIME=y
++CONFIG_RT_USING_I2C=y
++CONFIG_RT_USING_ADC=y
++CONFIG_RT_USING_DEVMEM=y
++CONFIG_RT_USING_PWM=y
++CONFIG_RT_USING_PM=y
++CONFIG_RT_USING_SDIO=y
++CONFIG_RT_SDIO_STACK_SIZE=10240
++CONFIG_RT_SDIO_THREAD_PRIORITY=4
++CONFIG_RT_MMCSD_STACK_SIZE=32768
++CONFIG_RT_USING_SPI=y
++CONFIG_RT_USING_QSPI=y
++CONFIG_RT_USING_WDT=y
++CONFIG_RT_USING_TOUCH=y
++CONFIG_RT_USING_WIFI=y
++CONFIG_RT_WLAN_DEVICE_STA_NAME="sta"
++CONFIG_RT_WLAN_DEVICE_AP_NAME="ap"
++CONFIG_SAL_USING_POSIX=y
++CONFIG_SAL_USING_AF_UNIX=y
++CONFIG_RT_USING_LWIP212=y
++CONFIG_RT_LWIP_MEM_ALIGNMENT=8
++CONFIG_LWIP_USING_DHCPD=y
++CONFIG_RT_RECOVERY_MPY_AUTO_EXEC_PY=y
++CONFIG_RT_FASTBOOT=y
++CONFIG_RT_USING_CIPHER=y
++CONFIG_RT_USING_AES=y
++CONFIG_RT_USING_HASH=y
++CONFIG_RT_USING_PUFS=y
++CONFIG_RT_USING_FFT=y
++# CONFIG_RT_USING_VG_LITE is not set
++CONFIG_RT_USING_GPIO=y
++CONFIG_RT_USING_HW_TIMER0=y
++CONFIG_RT_USING_HW_TIMER1=y
++CONFIG_RT_USING_HW_TIMER2=y
++CONFIG_RT_USING_HW_TIMER3=y
++CONFIG_RT_USING_HW_TIMER4=y
++CONFIG_RT_USING_HW_TIMER5=y
++CONFIG_RT_USING_SOFT_I2C=y
++CONFIG_RT_USING_I2C0=y
++CONFIG_RT_USING_I2C1=y
++CONFIG_RT_USING_I2C2=y
++CONFIG_RT_USING_I2C3=y
++CONFIG_RT_USING_I2C4=y
++CONFIG_RT_USING_PDMA=y
++CONFIG_RT_USING_RTC_PMU=y
++CONFIG_RT_USING_SDIO0=y
++CONFIG_RT_SDIO0_EMMC=y
++CONFIG_RT_SDIO0_1V8=y
++CONFIG_SDIO0_BUS_WIDTH_8BIT=y
++CONFIG_RT_USING_SDIO1=y
++CONFIG_RT_USING_SPI0=y
++CONFIG_RT_USING_SPI1=y
++CONFIG_RT_USING_SPI2=y
++CONFIG_RT_USING_TS=y
++CONFIG_DRV_TS_USE_RT_DEVICE=y
++CONFIG_RT_USING_REALTEK=y
++CONFIG_REALTEK_SDIO_RTL8733BS=y
++CONFIG_BSP_WIFI_SDIO_HOST_1=y
++CONFIG_BSP_WIFI_SDIO_REG_ON_PIN=6
++CONFIG_BSP_WIFI_SDIO_RESET_ACTIVE_LOW=y
++CONFIG_BSP_WIFI_SDIO_RESET_PULSE_MS=200
++CONFIG_BSP_WIFI_SDIO_POWER_UP_DELAY_MS=50
++CONFIG_RT_USING_REGULATOR=y
++CONFIG_TOUCH_TYPE_CST128=y
++CONFIG_TOUCH_CST128_DFT_RANGE_X=480
++CONFIG_TOUCH_CST128_DFT_RANGE_Y=640
++CONFIG_TOUCH_DEFAULT_DEVICE=y
++CONFIG_TOUCH_DEV_INT_PIN=23
++CONFIG_TOUCH_DEV_INT_EDGE_FALLING=y
++CONFIG_TOUCH_DEV_RST_PIN=24
++CONFIG_TOUCH_DEV_RST_PIN_VALID_VALUE=0
++CONFIG_TOUCH_DEV_I2C_BUS_3=y
++CONFIG_TOUCH_DEV_I2C_BUS_SPEED=400000
++CONFIG_TOUCH_RANGE_X=480
++CONFIG_TOUCH_RANGE_Y=640
++CONFIG_RT_USING_WS2812=y
++CONFIG_RT_USING_ONEWIRE=y
++CONFIG_ENABLE_CHERRY_USB=y
++CONFIG_ENABLE_CHERRY_USB_DEVICE=y
++CONFIG_ENABLE_CHERRY_USB_HOST=y
++CONFIG_DWC2_DRV_DMA_DESC_ENABLE=y
++CONFIG_CHERRY_USB_HOST_USING_DEV1=y
++CONFIG_CHERRY_USB_HOST_ENABLE_CLASS_HID=y
++CONFIG_CHERRY_USB_HOST_ENABLE_CLASS_MSC=y
++CONFIG_CHERRY_USB_HOST_ENABLE_CLASS_UVC=y
++CONFIG_CHERRY_USB_RTL8152_LINKCHECK=y
++CONFIG_ENABLE_CANMV_USB_HOST=y
++CONFIG_ENABLE_CANMV_NETWORK_MGMT_DEV=y
++CONFIG_ENABLE_CANMV_MISC_DEV=y
++CONFIG_PKG_USING_NETUTILS=y
++CONFIG_PKG_NETUTILS_NTP=y
++CONFIG___STACKSIZE__=65536
+-- 
+2.25.1
+

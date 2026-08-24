@@ -47,10 +47,18 @@ APPS_DIR=$(cd -- "$SDK_ROOT/src/applications" 2>/dev/null && pwd -P) ||
     fail "place this EdgeOS checkout directly below $APPS_DIR"
 APPS_MK=$APPS_DIR/apps.mk
 [[ -f $APPS_MK ]] || fail "missing $APPS_MK"
-APP_MAPPING='subdirs-$(CONFIG_APP_ENABLE_LVGL_LAUNCHER) += '
+grep -Eq '^[[:space:]]*config[[:space:]]+APP_ENABLE_EDGEOS_DESKTOP([[:space:]]|$)' \
+    "$EDGEOS_ROOT/Kconfig" || fail "Kconfig does not define APP_ENABLE_EDGEOS_DESKTOP"
+grep -Eq '^[[:space:]]*depends[[:space:]]+on[[:space:]]+SDK_ENABLE_CANMV([[:space:]]|$)' \
+    "$EDGEOS_ROOT/Kconfig" || fail "EdgeOS Kconfig is not restricted to CanMV"
+if grep -Eq '^[[:space:]]*config[[:space:]]+APP_ENABLE_LVGL_LAUNCHER([[:space:]]|$)' \
+    "$EDGEOS_ROOT/Kconfig"; then
+    fail "obsolete APP_ENABLE_LVGL_LAUNCHER remains in Kconfig"
+fi
+APP_MAPPING='subdirs-$(CONFIG_APP_ENABLE_EDGEOS_DESKTOP) += '
 APP_MAPPING+=$(basename -- "$EDGEOS_ROOT")
 mapping_count=$(grep -Ec \
-    '^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_LVGL_LAUNCHER\)[[:space:]]*\+=[[:space:]]*' \
+    '^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_EDGEOS_DESKTOP\)[[:space:]]*\+=[[:space:]]*' \
     "$APPS_MK" || true)
 [[ $mapping_count == 1 && $(grep -Fxc -- "$APP_MAPPING" "$APPS_MK" || true) == 1 ]] ||
     fail "application is not registered exactly once; run tools/integrate_canmv_sdk.sh"
@@ -87,7 +95,66 @@ require_text \
     'CONFIG_RT_PARTITION_NUMBER=4' 'four-partition EdgeOS product config'
 require_text \
     boards/k230_canmv_dongshanpi/system-version.txt \
-    '^v0\.7\.6$' 'EdgeOS v0.7.6 product version'
+    '^v0\.7\.7$' 'EdgeOS v0.7.7 product version'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_APP_ENABLE_EDGEOS_DESKTOP=y$' 'EdgeOS application product symbol'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_ENABLE_NETWORK_RT_WLAN=y$' 'DongshanPI WLAN product profile'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_RTSMART_CONFIG_FILE="k230_canmv_dongshanpi_edgeos"$' \
+    'dedicated RT-Smart EdgeOS kernel profile'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_MPP_DEFAULT_SENSOR_CSI_0=y$' 'DongshanPI default camera port'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_MPP_CSI_DEV0_I2C_DEV="i2c0"$' 'CSI0 camera I2C routing'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_MPP_CSI_DEV2_I2C_DEV="i2c4"$' 'CSI2 camera I2C routing'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_MPP_DSI_HDMI_I2C_DEV="i2c3"$' 'display bridge I2C routing'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_MPP_DSI_LCD_BACKLIGHT_PIN=25$' 'DongshanPI LCD backlight pin'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^# CONFIG_RTSMART_3RD_PARTY_LVGL_USE_VGLITE is not set$' \
+    'disabled LVGL VG-Lite renderer'
+require_text \
+    configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^# CONFIG_RTSMART_HAL_ENABLE_VG_LITE is not set$' \
+    'disabled RT-Smart HAL VG-Lite library'
+require_text \
+    src/rtsmart/rtsmart/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^# CONFIG_RT_USING_VG_LITE is not set$' \
+    'disabled kernel VG-Lite driver'
+require_text \
+    src/rtsmart/rtsmart/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_REALTEK_SDIO_RTL8733BS=y$' 'DongshanPI RTL8733BS Wi-Fi profile'
+require_text \
+    src/rtsmart/rtsmart/kernel/bsp/maix3/configs/k230_canmv_dongshanpi_edgeos_defconfig \
+    '^CONFIG_TOUCH_DEV_INT_EDGE_FALLING=y$' 'DongshanPI falling-edge touch IRQ'
+require_text \
+    src/rtsmart/rtsmart/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c \
+    'timestamp[[:space:]]*=[[:space:]]*reg->time' \
+    'touch controller acquisition timestamps'
+require_text \
+    src/rtsmart/libs/3rd-party/lvgl/port/lv_k230_input_touch.h \
+    '^#define[[:space:]]+LV_K230_TOUCH_DRAG_THRESHOLD[[:space:]]+10$' \
+    'low-latency touch drag threshold'
+require_text \
+    src/rtsmart/libs/3rd-party/lvgl/port/lv_k230_input_touch.c \
+    '^#define[[:space:]]+LV_K230_TOUCH_MAX_DRAIN_REPORTS[[:space:]]+8U$' \
+    'bounded touch report queue draining'
+require_text \
+    src/rtsmart/libs/3rd-party/lvgl/port/lv_k230_display.c \
+    '^#define[[:space:]]+LV_K230_DISPLAY_PRINT_FLUSH_FPS[[:space:]]+0$' \
+    'disabled display hot-path FPS logging'
 require_text \
     tools/genimage_py/image_com.py \
     'def[[:space:]]+_sync_toc_entries[[:space:]]*\(' \
@@ -129,7 +196,7 @@ if [[ -f $SDK_ROOT/.config ]]; then
     require_text .config \
         '^CONFIG_BOARD_CONFIG_NAME="k230_canmv_dongshanpi_edgeos_defconfig"$' \
         'active EdgeOS defconfig'
-    require_text .config '^CONFIG_APP_ENABLE_LVGL_LAUNCHER=y$' \
+    require_text .config '^CONFIG_APP_ENABLE_EDGEOS_DESKTOP=y$' \
         'enabled EdgeOS application'
     require_text .config '^CONFIG_RTSMART_3RD_PARTY_ENABLE_LVGL=y$' \
         'enabled userspace LVGL library'
@@ -155,13 +222,13 @@ if [[ -f $archive ]]; then
     fi
 fi
 
-full_image=$SDK_ROOT/output/k230_canmv_dongshanpi_edgeos_defconfig/DshanPI_EdgeOS_Desktop_v0.7.6.img
+full_image=$SDK_ROOT/output/k230_canmv_dongshanpi_edgeos_defconfig/DshanPI_EdgeOS_Desktop_v0.7.7.img
 firmware_checker=$SCRIPT_DIR/check_firmware_image.py
 if [[ -f $full_image ]]; then
     [[ -f $firmware_checker ]] ||
         fail "missing firmware image checker: $firmware_checker"
     python3 "$firmware_checker" "$full_image" ||
-        fail "v0.7.6 full firmware image validation failed"
+        fail "v0.7.7 full firmware image validation failed"
 else
     printf 'Warning: %s is absent; full firmware image validation skipped.\n' \
         "$full_image" >&2

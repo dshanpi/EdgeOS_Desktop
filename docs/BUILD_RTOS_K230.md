@@ -1,25 +1,25 @@
-# 在 `rtos_k230` 中构建 EdgeOS Desktop
+# 在 `canmv_k230` 中构建 EdgeOS Desktop
 
-本文面向需要把 EdgeOS Desktop 集成到 K230 RTOS SDK 并生成完整固件的用户。
-`rtos_k230` 与 `canmv_k230` 只是本地目录名；只要工作区由本项目锁定的 K230
-RTOS/CanMV repo manifest 创建，构建目标仍然使用
-`k230_canmv_dongshanpi_edgeos_defconfig`。
+本文面向需要把 EdgeOS Desktop 集成到 CanMV K230 SDK 并生成完整固件的用户。
+当前公开发布只支持由本项目锁定 manifest 创建的 `canmv_k230`
+工作区，构建目标为 `k230_canmv_dongshanpi_edgeos_defconfig`。
+本文件名为了旧链接兼容而保留，不表示继续支持另一套 `rtos_k230` 工作区。
 
 本流程固定以下版本组合：
 
 | 组件 | 固定版本 |
 | --- | --- |
-| EdgeOS Desktop | `edgeos-sdk-v1.0.1` |
-| EdgeOS 提交 | 由 `git rev-list -n1 edgeos-sdk-v1.0.1` 从发布标签动态解析 |
+| EdgeOS Desktop | `edgeos-sdk-v1.0.2` |
+| EdgeOS 提交 | 由 `git rev-list -n1 edgeos-sdk-v1.0.2` 从发布标签动态解析 |
 | 上游 manifest | `d207027db3ae457cd43629c80b8a42e3b79fd51a` |
 | SDK 项目 | `sdk/manifests/upstream-lock.xml` 中 24 个不可变 revision |
 | 目标板 | DshanPI CanMV-K230 V3 |
-| 产品固件 | `v0.7.6` |
+| 产品固件 | `v0.7.7` |
 
 不要把这组补丁强制应用到任意“最新版”SDK，也不要只挑选其中一部分。
 
 > [!CAUTION]
-> 已撤回的 `edgeos-sdk-v1.0.0` 可以通过编译和打包，但 Python genimage 会把布局解析前尚未确定的 `spl`、`uboot` 长度以 0 写入最终 TOC，生成的 `v0.7.5` 固件在开发板上会以 `K230 boot: invalid TOC entry 1` 启动失败。不得继续烧录或分发该版本固件；必须使用本指南的 `edgeos-sdk-v1.0.1` 重新生成 `v0.7.6`。
+> 已撤回的 `edgeos-sdk-v1.0.0` 可以通过编译和打包，但 Python genimage 会把布局解析前尚未确定的 `spl`、`uboot` 长度以 0 写入最终 TOC，生成的 `v0.7.5` 固件在开发板上会以 `K230 boot: invalid TOC entry 1` 启动失败。不得继续烧录或分发该版本固件；必须使用本指南的 `edgeos-sdk-v1.0.2` 重新生成 `v0.7.7`。
 
 ## 1. 主机准备
 
@@ -48,25 +48,24 @@ git lfs install
 
 ## 2. 创建锁定的 SDK 工作区
 
-推荐创建全新工作区。以下目录名有意使用 `rtos_k230`，以说明它不会改变
-SDK 类型或构建目标：
+推荐创建全新的 `canmv_k230` 工作区：
 
-以下命令要求 `$HOME/rtos_k230` 尚不存在；如果 `mkdir` 或后续任一步失败，
+以下命令要求 `$HOME/canmv_k230` 尚不存在；如果 `mkdir` 或后续任一步失败，
 立即停止，不要在错误目录继续执行：
 
 ```bash
-mkdir "$HOME/rtos_k230" &&
-cd "$HOME/rtos_k230" &&
+mkdir "$HOME/canmv_k230" &&
+cd "$HOME/canmv_k230" &&
 repo init \
   -u https://github.com/dshanpi/EdgeOS_Desktop.git \
-  -b refs/tags/edgeos-sdk-v1.0.1 \
+  -b refs/tags/edgeos-sdk-v1.0.2 \
   -m sdk/manifests/upstream-lock.xml \
   --repo-url=https://github.com/canmv-k230/git-repo.git &&
 repo sync -c -j"$(nproc)"
 ```
 
-这里必须写完整的 `refs/tags/edgeos-sdk-v1.0.1`。只写
-`-b edgeos-sdk-v1.0.1` 会被 repo 当成分支名并导致初始化失败。
+这里必须写完整的 `refs/tags/edgeos-sdk-v1.0.2`。只写
+`-b edgeos-sdk-v1.0.2` 会被 repo 当成分支名并导致初始化失败。
 
 检查工作区，然后下载 SDK 工具链：
 
@@ -85,13 +84,13 @@ make dl_toolchain
 ```bash
 (
 set -e
-cd "$HOME/rtos_k230/src/applications"
-git clone --branch edgeos-sdk-v1.0.1 \
+cd "$HOME/canmv_k230/src/applications"
+git clone --branch edgeos-sdk-v1.0.2 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 
 test "$(git rev-parse HEAD)" = \
-  "$(git rev-list -n1 edgeos-sdk-v1.0.1)"
+  "$(git rev-list -n1 edgeos-sdk-v1.0.2)"
 printf 'Verified EdgeOS commit: %s\n' "$(git rev-parse HEAD)"
 git describe --tags --exact-match HEAD
 git lfs pull
@@ -107,7 +106,7 @@ git lfs fsck
 先执行只读预检，再一次性应用全部六组 SDK 补丁：
 
 ```bash
-cd "$HOME/rtos_k230/src/applications/EdgeOS_Desktop" &&
+cd "$HOME/canmv_k230/src/applications/EdgeOS_Desktop" &&
 ./tools/apply_sdk_patches.sh --check &&
 ./tools/apply_sdk_patches.sh --apply &&
 ./tools/integrate_canmv_sdk.sh
@@ -125,19 +124,21 @@ HEAD/tree、Git 操作状态和未跟踪文件冲突。任何一项失败时都�
 回到 SDK 根目录，使用专用 EdgeOS defconfig：
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make k230_canmv_dongshanpi_edgeos_defconfig &&
 ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 ```
 
-即使 SDK 根目录叫 `rtos_k230`，也不要改用猜测的 `k230_rtos_*` 目标。
+不要改用猜测的 `k230_rtos_*` 目标。
 正确配置应至少包含：
 
 ```text
 CONFIG_BOARD_CONFIG_NAME="k230_canmv_dongshanpi_edgeos_defconfig"
 CONFIG_RT_PARTITION_NUMBER=4
 CONFIG_RTSMART_3RD_PARTY_ENABLE_LVGL=y
-CONFIG_APP_ENABLE_LVGL_LAUNCHER=y
+CONFIG_APP_ENABLE_EDGEOS_DESKTOP=y
+# CONFIG_RTSMART_3RD_PARTY_LVGL_USE_VGLITE is not set
+# CONFIG_RTSMART_HAL_ENABLE_VG_LITE is not set
 ```
 
 专用配置已经启用 EdgeOS。`make menuconfig` 只用于检查或自定义；应用位于
@@ -152,9 +153,9 @@ defconfig，避免意外保存其他选项。
 必须使用能传递内部 make 失败状态的命令：
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 bash -o pipefail -c \
-  'time make 2>&1 | tee edgeos-v1.0.1-build.log'
+  'time make 2>&1 | tee edgeos-v1.0.2-build.log'
 ```
 
 不要把 `make app` 当成最终验收。它适合在基础库已经生成后诊断应用；正式
@@ -174,16 +175,29 @@ K230_TOOLCHAIN_NM="${SDK_TOOLCHAIN_DIR:-$HOME/.kendryte/k230_toolchains}/riscv64
 ## 7. 验证产物
 
 ```bash
-cd "$HOME/rtos_k230/output/k230_canmv_dongshanpi_edgeos_defconfig"
+cd "$HOME/canmv_k230/output/k230_canmv_dongshanpi_edgeos_defconfig"
 
-test -s DshanPI_EdgeOS_Desktop_v0.7.6.img
-test -s DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
+test -s DshanPI_EdgeOS_Desktop_v0.7.7.img
+test -s DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg
 sha256sum \
-  DshanPI_EdgeOS_Desktop_v0.7.6.img \
-  DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
-fdisk -l DshanPI_EdgeOS_Desktop_v0.7.6.img
+  DshanPI_EdgeOS_Desktop_v0.7.7.img \
+  DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg
+fdisk -l DshanPI_EdgeOS_Desktop_v0.7.7.img
+python3 "$HOME/canmv_k230/src/applications/EdgeOS_Desktop/tools/check_firmware_image.py" \
+  DshanPI_EdgeOS_Desktop_v0.7.7.img
 sed -n '1,120p' images/sdcard/revision.txt
 ```
+
+只有检查器结束于下列文本，完整镜像才可以进入烧录流程：
+
+```text
+PASS: EdgeOS firmware image is structurally valid.
+```
+
+该门禁会检查 MBR、最终 K230 TOC、A/B 范围、包头和可检查的负载摘要。
+本次 v1.0.2 实测完整镜像为 `2283798528` bytes，SHA-256 为
+`77ee49eb3bc3f3483166777c7d03e56c29cc1840665706f56d69454a241fe8b8`，
+11 个 TOC 项、3 个 MBR 分区与负载摘要检查全部通过。
 
 完整镜像应包含 20 MiB `bin`、1 GiB `app_a` 和 1 GiB `app_b` 三个预创建
 FAT 分区。推荐把完整镜像写入 CanMV-K230 V3 的至少 8 GB 板载 eMMC。设备
@@ -195,7 +209,7 @@ SDK 输出中的 `images/sdcard/` 和设备上的 `/sdcard` 是镜像构建目�
 RT-Smart 逻辑挂载路径，不表示固件必须写入物理 microSD/TF 卡。只有明确选择
 TF 卡启动时，才在烧录工具中选择对应的 SDCARD/SDIO1 目标。
 
-设备 OTA 使用未压缩的 `DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg`；不要把
+设备 OTA 使用未压缩的 `DshanPI_EdgeOS_Desktop_v0.7.7_ota.kdimg`；不要把
 `.kdimg.gz` 直接配置成设备下载目标。下载 OTA 前，`/data` 的可用空间必须
 大于未压缩 KDIMG；本次产物约 1.02 GiB，实际部署还应预留额外余量。
 
@@ -208,10 +222,11 @@ TF 卡启动时，才在烧录工具中选择对应的 SDCARD/SDIO1 目标。
 
 1. 建议先拔除 TF 卡，避免板上同时存在两个不同系统而干扰启动判断。
 2. 在 LYNX 中选择芯片 `K230`、目标 `EMMC`（K230 SDIO0）。
-3. 选择 `DshanPI_EdgeOS_Desktop_v0.7.6.img`，写入地址/偏移设为 `0x0`；如果
+3. 选择 `DshanPI_EdgeOS_Desktop_v0.7.7.img`，写入地址/偏移设为 `0x0`；如果
    工具对完整镜像自动固定该值，保持默认即可。
-4. 使开发板进入 USB 烧录模式，等待写入成功后复位开发板。
-5. 连接串口检查完整启动，并确认进入 EdgeOS Desktop。
+4. 将镜像传输到 LYNX 后重新校验 SHA-256，确认没有命中同名旧缓存。
+5. 使开发板进入 USB 烧录模式，等待写入任务以退出码 0 完成后复位开发板。
+6. 连接串口检查完整启动，并确认进入 EdgeOS Desktop。
 
 完整 `.img` 已内含 TOC、SPL、U-Boot 和分区位置，不能改为从 `0xe0000`、
 `0x100000` 等镜像内部地址开始写入，也不能用 `.img.gz` 替代未压缩 `.img`。
@@ -219,7 +234,11 @@ TF 卡启动时，才在烧录工具中选择对应的 SDCARD/SDIO1 目标。
 [`FLASH_LYNX.md`](FLASH_LYNX.md)。
 
 编译退出码为 0 只能证明构建与打包成功，不能替代本节的板端启动验收。
-各发布版本的当前状态见 [`validation/README.md`](validation/README.md)。
+本次使用 USB `2:8`、串口 `COM9` 和 EMMC/SDIO0 成功写入；启动后已确认
+U-Boot SPL `00006-g94c9688c`、OpenSBI、RT-Smart、System `v0.7.7`、CSI0/CSI2
+GC2093、ST7701、CST128 `i2c3`、SDIO Wi-Fi、IP 和 NTP，未出现 invalid TOC、
+Page Fault 或 Illegal Instruction。触摸流畅度仍待用户完成主观验收。各发布版本的
+当前状态见 [`validation/README.md`](validation/README.md)。
 
 ## 9. 非默认工具链目录
 
@@ -232,10 +251,10 @@ set -e
 export SDK_TOOLCHAIN_DIR="$HOME/k230_toolchains"
 export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin"
 
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make dl_toolchain
 make k230_canmv_dongshanpi_edgeos_defconfig
-bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.1-build.log'
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.2-build.log'
 K230_TOOLCHAIN_NM="$K230_TOOLCHAIN_BIN/riscv64-unknown-linux-musl-nm" \
   ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 )
@@ -263,7 +282,7 @@ tracked 修改。只有在下面两个 `test` 都成功，而且人工确认 dif
 ```bash
 (
 set -e
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 test -z "$(git diff --cached --name-only)"
 test "$(git diff --name-only)" = "src/applications/apps.mk"
 git diff -- src/applications/apps.mk
@@ -297,21 +316,22 @@ git diff -- src/applications/apps.mk
 | 缺少 `lv_k230_touch_accept_click()` 或 `k230_ota_get_status()` | 只复制了应用或只打了部分补丁 | 使用完整六项目补丁集，不要挑选补丁 |
 | `Applications Configuration` 中没有 EdgeOS | 仓库不在 `src/applications/` 直属目录，或未重新生成 Kconfig | 调整目录后重新执行 defconfig/menuconfig |
 | 菜单中存在但没有进入 `[BUILD] applications EdgeOS_Desktop` | `apps.mk` 未注册 | 运行 `tools/integrate_canmv_sdk.sh` |
-| `revision mismatch` | SDK 不属于 v1.0.1 的 24 项锁定基线 | 新建锁定工作区，不要 force |
+| `revision mismatch` | SDK 不属于 v1.0.2 的 24 项锁定基线 | 新建锁定工作区，不要 force |
 | 模型文件很小或仍是 LFS pointer | 未完成 Git LFS 下载 | `git lfs pull && git lfs fsck` |
 | 找不到交叉编译器 | 工具链未下载或路径变量不一致 | `make dl_toolchain`，检查两个工具链变量 |
 | DTLS-SRTP/Mbed TLS undefined reference | 复用了配置变化前的旧 Mbed TLS 对象，或使用了普通 defconfig | 使用 EdgeOS defconfig；必要时按下方命令定向清理 |
 | 生成 app FAT 镜像时报空间不足 | 使用了旧的 512 MiB 布局或资源不完整 | 确认完整方案 A 和 1 GiB A/B 配置 |
-| `K230 boot: invalid TOC entry 1`，随后出现 `no mkimage signature but raw image not supported` | 使用了已撤回的 v1.0.0 固件；第二条是 SPL 回退路径的连锁错误 | 用 v1.0.1 在锁定 SDK 中重新构建 v0.7.6，不要继续烧录 v0.7.5 |
+| `K230 boot: invalid TOC entry 1`，随后出现 `no mkimage signature but raw image not supported` | 使用了已撤回的 v1.0.0 固件；第二条是 SPL 回退路径的连锁错误 | 用 v1.0.2 在锁定 SDK 中重新构建 v0.7.7，不要继续烧录 v0.7.5 |
 | `HS200 tuning failed: -110` 后显示 `MMC High Speed (52MHz)` | eMMC HS200 调谐失败后成功降速 | 这是非致命回退；继续检查后续第一条真正的启动错误 |
 | LYNX 显示成功但开发板不启动 | 介质、文件或写入地址选择错误，或者 TF 卡干扰 | 拔除 TF 卡，确认使用完整未压缩 `.img`、目标 EMMC、地址 `0x0`；禁止使用 `_ota.kdimg` |
 
 仅在复用旧 SDK 且确认是 Mbed TLS 旧对象时执行定向清理：
 
 ```bash
-cd "$HOME/rtos_k230"
+cd "$HOME/canmv_k230"
 make -C src/rtsmart/libs/3rd-party/mbedtls/mbedtls/library clean
 ```
 
 构建、板端验收和已撤回版本的状态见
-[`validation/README.md`](validation/README.md)。
+[`validation/README.md`](validation/README.md)；板级适配、`repo sync` 后的补丁重放与
+defconfig/补丁的区别见 [`PORTING_CANMV_K230.md`](PORTING_CANMV_K230.md)。

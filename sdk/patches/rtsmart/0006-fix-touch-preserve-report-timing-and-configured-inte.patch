@@ -1,0 +1,52 @@
+From 9165fcf343e019af3c760cdec6e755626aa932ff Mon Sep 17 00:00:00 2001
+From: DshanPI EdgeOS SDK <sdk@dshanpi.com>
+Date: Mon, 24 Aug 2026 07:30:00 -0400
+Subject: [PATCH 6/6] fix(touch): preserve report timing and configured
+ interrupt edge
+
+---
+ .../maix3/drivers/extdrv/touch/drv_touch.c    | 21 ++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
+index 9e9832a..be6e1d3 100644
+--- a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
++++ b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
+@@ -229,7 +229,11 @@ static rt_size_t drv_touch_parse(struct drv_touch_dev* dev, struct touch_registe
+     // Temporary buffer to hold all generated events (down, move, up)
+     struct rt_touch_data all_events[TOUCH_MAX_POINT_NUMBER];
+     int                  total_events = 0;
+-    rt_tick_t            timestamp    = rt_tick_get();
++    /* read_register() timestamps the controller report before it is queued.
++     * Keep that acquisition time here.  Re-stamping at dequeue time collapses
++     * every report in a backlog onto nearly the same tick and breaks pointer
++     * velocity/gesture timing in userspace. */
++    rt_tick_t            timestamp    = reg->time;
+ 
+     // PART 1: Determine DOWN and MOVE events
+     for (int i = 0; i < current_finger_num; i++) {
+@@ -578,8 +582,19 @@ static struct drv_touch_dev* drv_touch_create_device(struct drv_touch_config* cf
+         }
+     }
+ 
+-    dev->pin.intr      = cfg->pin_intr;
+-    dev->pin.intr_edge = cfg->intr_value ? GPIO_PE_RISING : GPIO_PE_FALLING;
++    dev->pin.intr = cfg->pin_intr;
++    /* TOUCH_DEV_INT_EDGE uses the gpio_pin_edge_t numeric values directly
++     * (0=RISING, 1=FALLING, ...).  The former boolean conversion inverted
++     * the configured DongshanPI falling edge and also made BOTH/HIGH/LOW
++     * impossible to select. */
++    if (cfg->intr_value >= GPIO_PE_RISING &&
++        cfg->intr_value <= GPIO_PE_LOW) {
++        dev->pin.intr_edge = (gpio_pin_edge_t)cfg->intr_value;
++    } else {
++        LOG_W("Invalid touch interrupt edge %d, use FALLING",
++              cfg->intr_value);
++        dev->pin.intr_edge = GPIO_PE_FALLING;
++    }
+     dev->pin.rst       = cfg->pin_reset;
+     dev->pin.rst_valid = cfg->reset_value;
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,102 @@
+From b9b3160384a3efb5412b526cf1c4c8fa7b71953f Mon Sep 17 00:00:00 2001
+From: DshanPI EdgeOS SDK <sdk@dshanpi.com>
+Date: Mon, 24 Aug 2026 06:04:03 -0400
+Subject: [PATCH 4/4] fix(board): restore DongshanPI camera and panel setup
+
+---
+ kernel/connector/src/panels/mipi_st7701.c | 16 ++++++++--------
+ kernel/sensor/src/gc2093/gc2093.c         |  2 +-
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/kernel/connector/src/panels/mipi_st7701.c b/kernel/connector/src/panels/mipi_st7701.c
+index 3bcaa84..6787582 100644
+--- a/kernel/connector/src/panels/mipi_st7701.c
++++ b/kernel/connector/src/panels/mipi_st7701.c
+@@ -138,7 +138,7 @@ static int st7701_480x640_init(const struct panel_desc* desc)
+     return dsi_send_cmd_sequence(desc, init_sequence, sizeof(init_sequence), 0);
+ }
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE)
++#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static int st7701_480x800_lckfb_init(const struct panel_desc* desc)
+ {
+     /* clang-format off */
+@@ -293,7 +293,7 @@ static int st7701_480x640_atk_init(const struct panel_desc* desc)
+ }
+ #endif
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM)
++#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static int st7701_480x640_yahboom_init(const struct panel_desc* desc)
+ {
+     /* clang-format off */
+@@ -485,7 +485,7 @@ static const struct panel_ops st7701_480x800_ops = {
+     .read_chip_id = dsi_read_chip_id,
+ };
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE)
++#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static const struct panel_ops st7701_480x800_lckfb_ops = {
+     .reset        = panel_generic_reset,
+     .init         = st7701_480x800_lckfb_init,
+@@ -517,7 +517,7 @@ static const struct panel_ops st7701_480x640_atk_ops = {
+ };
+ #endif
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM)
++#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static const struct panel_ops st7701_480x640_yahboom_ops = {
+     .reset        = panel_generic_reset,
+     .init         = st7701_480x640_yahboom_init,
+@@ -622,7 +622,7 @@ static const struct panel_desc st7701_480x800_panel_desc = {
+     .ops = &st7701_480x800_ops,
+ };
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE)
++#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static const struct panel_desc st7701_480x800_lckfb_panel_desc = {
+     .name = "st7701_480x800_lckfb",
+     .connector_type = ST7701_480_800_DSI_V1,
+@@ -743,7 +743,7 @@ static const struct panel_desc st7701_480x640_atk_panel_desc = {
+ };
+ #endif
+ 
+-#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM)
++#if defined(CONFIG_BOARD_K230_CANMV_YAHBOOM) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+ static const struct panel_desc st7701_480x640_yahboom_panel_desc = {
+     .name = "st7701_480x640_yahboom",
+     .connector_type = ST7701_480_640_DSI_V1,
+@@ -870,7 +870,7 @@ static const struct panel_desc* st7701_panel_variants[] = {
+     &st7701_480x854_panel_desc,
+ 
+ /* 480x800 panel */
+-#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE)
++#if defined(CONFIG_BOARD_K230_CANMV_LCKFB) || defined (CONFIG_BOARD_K230D_CANMV_LUSHANPI_LITE) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+     &st7701_480x800_lckfb_panel_desc,
+ #else
+     &st7701_480x800_panel_desc,
+@@ -879,7 +879,7 @@ static const struct panel_desc* st7701_panel_variants[] = {
+ /* 480x640 panel */
+ #if defined(CONFIG_BOARD_K230D_CANMV_ATK_DNK230D)
+     &st7701_480x640_atk_panel_desc,
+-#elif defined(CONFIG_BOARD_K230_CANMV_YAHBOOM)
++#elif defined(CONFIG_BOARD_K230_CANMV_YAHBOOM) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+     &st7701_480x640_yahboom_panel_desc,
+ #elif defined(CONFIG_BOARD_K230_CANMV_MRT)
+     &st7701_480x640_mrt_panel_desc,
+diff --git a/kernel/sensor/src/gc2093/gc2093.c b/kernel/sensor/src/gc2093/gc2093.c
+index ad48605..63b2501 100755
+--- a/kernel/sensor/src/gc2093/gc2093.c
++++ b/kernel/sensor/src/gc2093/gc2093.c
+@@ -115,7 +115,7 @@ static int _sensor_power_state_set(struct sensor_driver_dev *dev, k_s32 on, k_u3
+ 
+     if(-1 != pwd_gpio) {
+         kd_pin_mode(pwd_gpio, GPIO_DM_OUTPUT);
+-#if defined (CONFIG_BOARD_K230_CANMV_MRT)
++#if defined (CONFIG_BOARD_K230_CANMV_MRT) || defined (CONFIG_BOARD_K230_CANMV_DONGSHANPI)
+         kd_pin_write(pwd_gpio, GPIO_PV_HIGH);
+ #else
+         kd_pin_write(pwd_gpio, GPIO_PV_LOW);
+-- 
+2.25.1
+

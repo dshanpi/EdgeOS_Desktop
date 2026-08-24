@@ -1,2 +1,3 @@
 0001-feat-atag-publish-selected-OTA-slot.patch
 0002-feat-boot-add-verified-A-B-slot-fallback.patch
+0003-fix-board-restore-DongshanPI-peripheral-pinmux.patch
