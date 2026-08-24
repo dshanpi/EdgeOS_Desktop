@@ -77,7 +77,7 @@ tree ID 见 [`manifest.json`](manifest.json)。
 | Project path | Official base | Purpose |
 | --- | --- | --- |
 | `.` | `3f18247b4863` | Dedicated defconfig, product version, 1 GiB A/B image layout |
-| `src/rtsmart/libs` | `4964b24f0208` | Touch, OTA and PMU APIs; fonts and LVGL opt-in |
+| `src/rtsmart/libs` | `4964b24f0208` | Touch, OTA and PMU APIs; fonts, LVGL opt-in, HAL/VG-Lite library precedence |
 | `src/rtsmart/libs/3rd-party/lvgl/lvgl` | `c210a4efa2f4` | TJPGD 1/8 thumbnail decoding |
 | `src/rtsmart/mpp` | `631ca8660b31` | Camera mirror, source MP4 player/seek, H.264 FLV muxer |
 | `src/rtsmart/rtsmart` | `650f16563075` | Safe OTA sessions, slot mounts, touch and PMU kernel ABI |
