@@ -22,7 +22,7 @@ all: $(BIN)
 
 $(BIN): $(OBJ) | $(BIN_DIR)
 	@echo "[LD] $@"
-	$(Q)$(CC) $(CFLAGS) $(OBJ) $(LDFLAGS) -o $@
+	$(Q)$(CXX) $(CFLAGS) $(OBJ) $(LDFLAGS) -o $@
 	$(Q)$(STRIP) $@
 
 $(OBJ): main.c | $(BUILD)
