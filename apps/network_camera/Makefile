@@ -13,9 +13,9 @@ OBJS := $(BUILD)/main.o $(BUILD)/rtmp_play_server.o \
 	$(BUILD)/ui_font_network_20.o $(BUILD)/drv_touch.o
 DEPS := $(OBJS:.o=.d)
 
+include $(SDK_RTSMART_SRC_DIR)/libs/mk/liblvgl.mk
 include $(SDK_RTSMART_SRC_DIR)/libs/mk/libmpp.mk
 include $(SDK_RTSMART_SRC_DIR)/libs/mk/librtsmart_hal.mk
-include $(SDK_RTSMART_SRC_DIR)/libs/mk/liblvgl.mk
 
 CXX_FLAGS := -fopenmp -march=rv64imafdcv -mabi=lp64d -mcmodel=medany -Os
 CXX_FLAGS += -std=c++20 -Wall -Wextra -ffunction-sections -fdata-sections
