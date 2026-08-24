@@ -1,0 +1,112 @@
+From ce8d249d5a4fbadf2ec02a6d70472173acf67cd7 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:22:45 -0400
+Subject: [PATCH 2/4] feat(mount): select EdgeOS application slot from ATAG
+
+---
+ kernel/bsp/maix3/app_canmv/main.c | 50 ++++++++++++++++++++++++++++---
+ 1 file changed, 46 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/bsp/maix3/app_canmv/main.c b/kernel/bsp/maix3/app_canmv/main.c
+index 59d58e2e0072e4c828fbd6583724ae2439af85f4..78c818d7a5fd9ab2c714a64509a86f0fa91344bc 100644
+--- a/kernel/bsp/maix3/app_canmv/main.c
++++ b/kernel/bsp/maix3/app_canmv/main.c
+@@ -33,6 +33,7 @@
+ 
+ #include "sysctl_pwr.h"
+ #include "sysctl_boot.h"
++#include "k230_atag.h"
+ 
+ #define K230_TRUSTED_PRELOAD_CMD "@preload"
+ #define MMCSD_CARD_DETECT_TIMEOUT_MS 600
+@@ -132,6 +133,9 @@ static const struct dfs_mount_tbl* const auto_mount_table[SYSCTL_BOOT_MAX] = {
+ #elif CONFIG_RT_PARTITION_NUMBER == 3
+         { "sd01", "/sdcard", "elm", 0, 0 },
+         { "sd02", "/data", "elm", 0, 0 },
++#elif CONFIG_RT_PARTITION_NUMBER == 4
++        { "sd01", "/sdcard", "elm", 0, 0 },
++        { "sd03", "/data", "elm", 0, 0 },
+ #endif
+         { 0 },
+     },
+@@ -143,11 +147,30 @@ static const struct dfs_mount_tbl* const auto_mount_table[SYSCTL_BOOT_MAX] = {
+ #elif CONFIG_RT_PARTITION_NUMBER == 3
+         { "sd11", "/sdcard", "elm", 0, 0 },
+         { "sd12", "/data", "elm", 0, 0 },
++#elif CONFIG_RT_PARTITION_NUMBER == 4
++        { "sd11", "/sdcard", "elm", 0, 0 },
++        { "sd13", "/data", "elm", 0, 0 },
+ #endif
+         { 0 },
+     },
+ };
+ 
++#if CONFIG_RT_PARTITION_NUMBER == 4
++static const struct dfs_mount_tbl emmc_slot_b_mount_table[] = {
++    { "sd00", "/bin", "elm", 0, 0 },
++    { "sd02", "/sdcard", "elm", 0, 0 },
++    { "sd03", "/data", "elm", 0, 0 },
++    { 0 },
++};
++
++static const struct dfs_mount_tbl sdcard_slot_b_mount_table[] = {
++    { "sd10", "/bin", "elm", 0, 0 },
++    { "sd12", "/sdcard", "elm", 0, 0 },
++    { "sd13", "/data", "elm", 0, 0 },
++    { 0 },
++};
++#endif
++
+ static void mnt_mount_table(void)
+ {
+     int ret;
+@@ -169,6 +192,23 @@ static void mnt_mount_table(void)
+     }
+     mnt_tbl = auto_mount_table[boot_mode];
+ 
++#if CONFIG_RT_PARTITION_NUMBER == 4
++    {
++        char ota_slot = k230_atag_get_ota_slot();
++
++        if (ota_slot == 'B') {
++            if (boot_mode == SYSCTL_BOOT_EMMC)
++                mnt_tbl = emmc_slot_b_mount_table;
++            else if (boot_mode == SYSCTL_BOOT_SDCARD)
++                mnt_tbl = sdcard_slot_b_mount_table;
++        }
++        if (boot_mode == SYSCTL_BOOT_EMMC ||
++            boot_mode == SYSCTL_BOOT_SDCARD)
++            rt_kprintf("OTA application slot: %c\n",
++                       ota_slot == 'B' ? 'B' : 'A');
++    }
++#endif
++
+     while (1) {
+         if (!mnt_tbl->path) {
+             break;
+@@ -203,8 +243,9 @@ static void mnt_mount_table(void)
+                 if (format_data_partition && (0x00 == mkfs_for_data_partition)) {
+                     mkfs_for_data_partition = 1;
+ 
+-                    rt_kprintf("\033[31mStart format partition[2] to fat, it will took a long time, DO NOT POWEROFF "
+-                               "THE BOARD, PLEASE WAIT IT DONE\033[0m\n");
++                    rt_kprintf("\033[31mStart format partition[%d] to fat, it will took a long time, DO NOT POWEROFF "
++                               "THE BOARD, PLEASE WAIT IT DONE\033[0m\n",
++                               CONFIG_RT_PARTITION_NUMBER - 1);
+                     int mkfs_ret = dfs_mkfs("elm", mnt_tbl->device_name);
+                     if (RT_EOK == mkfs_ret) {
+                         if (auto_mkfs_marker &&
+@@ -221,10 +262,11 @@ static void mnt_mount_table(void)
+ #endif
+ 
+                 if ((-19) == err && !format_data_partition) {
+-                    rt_kprintf("Please format the partition[2] to FAT32.\nRefer to "
++                    rt_kprintf("Please format the partition[%d] to FAT32.\nRefer to "
+                                "https://support.microsoft.com/zh-cn/windows/"
+                                "%E5%88%9B%E5%BB%BA%E5%92%8C%E6%A0%BC%E5%BC%8F%E5%8C%96%E7%A1%AC%E7%9B%98%E5%88%86%E5%"
+-                               "8C%BA-bbb8e185-1bda-ecd1-3465-c9728f7d7d2e\n");
++                               "8C%BA-bbb8e185-1bda-ecd1-3465-c9728f7d7d2e\n",
++                               CONFIG_RT_PARTITION_NUMBER - 1);
+                 }
+             }
+         }

@@ -1,0 +1,1683 @@
+From ca14981254209b0cfdc0d0b78270f98e2d8a3028 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:22:47 -0400
+Subject: [PATCH 3/3] feat(libflv): restore minimal H.264 muxer source
+
+---
+ middleware/src/Makefile                       |   2 +-
+ middleware/src/mp4_format/src/libflv/LICENSE  |  19 +
+ middleware/src/mp4_format/src/libflv/Makefile |  44 ++
+ .../src/mp4_format/src/libflv/README.md       |  19 +
+ .../src/libflv/include/flv-header.h           | 118 ++++
+ .../mp4_format/src/libflv/include/flv-muxer.h |  37 ++
+ .../mp4_format/src/libflv/include/flv-proto.h |  75 +++
+ .../mp4_format/src/libflv/include/mpeg4-avc.h |  76 +++
+ .../mp4_format/src/libflv/source/flv-header.c | 238 ++++++++
+ .../mp4_format/src/libflv/source/flv-muxer.c  | 148 +++++
+ .../src/libflv/source/mpeg4-annexbtomp4.c     | 518 ++++++++++++++++++
+ .../mp4_format/src/libflv/source/mpeg4-avc.c  | 282 ++++++++++
+ 12 files changed, 1575 insertions(+), 1 deletion(-)
+ create mode 100644 middleware/src/mp4_format/src/libflv/LICENSE
+ create mode 100644 middleware/src/mp4_format/src/libflv/Makefile
+ create mode 100644 middleware/src/mp4_format/src/libflv/README.md
+ create mode 100644 middleware/src/mp4_format/src/libflv/include/flv-header.h
+ create mode 100644 middleware/src/mp4_format/src/libflv/include/flv-muxer.h
+ create mode 100644 middleware/src/mp4_format/src/libflv/include/flv-proto.h
+ create mode 100644 middleware/src/mp4_format/src/libflv/include/mpeg4-avc.h
+ create mode 100644 middleware/src/mp4_format/src/libflv/source/flv-header.c
+ create mode 100644 middleware/src/mp4_format/src/libflv/source/flv-muxer.c
+ create mode 100644 middleware/src/mp4_format/src/libflv/source/mpeg4-annexbtomp4.c
+ create mode 100644 middleware/src/mp4_format/src/libflv/source/mpeg4-avc.c
+
+diff --git a/middleware/src/Makefile b/middleware/src/Makefile
+index 47e58381168d6c7f671ce12a944fcf0dccb5637b..34ed2fd5f0d77e454c222c23931df1e596f1a8de 100644
+--- a/middleware/src/Makefile
++++ b/middleware/src/Makefile
+@@ -1,6 +1,6 @@
+ include mkenv.mk
+ 
+-subdirs-y := kdmedia live555 mp4_format mp4_player rtsp_client rtsp_server ogg
++subdirs-y := kdmedia live555 mp4_format mp4_format/src/libflv mp4_player rtsp_client rtsp_server ogg
+ 
+ subdirs-$(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG)		+= ffmpeg/src
+ subdirs-$(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_RTSP_PUSHER)	+= rtsp_pusher
+diff --git a/middleware/src/mp4_format/src/libflv/LICENSE b/middleware/src/mp4_format/src/libflv/LICENSE
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d53dd27048d56d9f2a75348b6886abbb31797da
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/LICENSE
+@@ -0,0 +1,19 @@
++MIT License
++
++Copyright (c) 2018 chen
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/middleware/src/mp4_format/src/libflv/Makefile b/middleware/src/mp4_format/src/libflv/Makefile
+new file mode 100644
+index 0000000000000000000000000000000000000000..e1a8a1a0104f26825883c9c56d9c613a92a3e1d6
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/Makefile
+@@ -0,0 +1,44 @@
++include ../../../mkenv.mk
++include $(SDK_RTSMART_SRC_DIR)/libs/mk/toolchain_riscv64_musl.mk
++
++BUILD := $(SDK_RTSMART_BUILD_DIR)/mpp/middleware/libflv
++LIB := $(MPP_MIDDLEWARE_LIB_INSTALL_PATH)/libflv.a
++
++include $(SDK_RTSMART_SRC_DIR)/libs/mk/libmpp.mk
++
++C_SRCS := $(wildcard source/*.c)
++OBJS := $(patsubst %.c,$(BUILD)/%.o,$(C_SRCS))
++DEPS := $(OBJS:.o=.d)
++
++INCS := include/flv-muxer.h include/flv-proto.h
++INCS_INSTALL := $(patsubst include/%,$(MPP_MIDDLEWARE_INC_INSTALL_PATH)/%,$(INCS))
++OBJ_DIRS := $(sort $(dir $(OBJS)) $(MPP_MIDDLEWARE_LIB_INSTALL_PATH) $(MPP_MIDDLEWARE_INC_INSTALL_PATH))
++
++CFLAGS := -fopenmp -march=rv64imafdcv -mabi=lp64d -mcmodel=medany -Os
++CFLAGS += -Iinclude -Wall -Wextra -ffunction-sections -fdata-sections
++CFLAGS += $(LIB_CFLAGS) $(EXTRA_CFLAGS) -std=gnu99
++
++.PHONY: all clean
++
++all: $(LIB) $(INCS_INSTALL)
++	@echo [BUILD] mpp middleware libflv done.
++
++$(MPP_MIDDLEWARE_INC_INSTALL_PATH)/%: include/% | $(MPP_MIDDLEWARE_INC_INSTALL_PATH)
++	@echo "[CP] $<"
++	$(Q)cp -f $< $@
++
++$(LIB): $(OBJS) | $(MPP_MIDDLEWARE_LIB_INSTALL_PATH)
++	@echo "[AR] $@"
++	$(Q)$(AR) rcs $@ $^
++
++$(BUILD)/%.o: %.c | $(OBJ_DIRS)
++	@echo "[CC] $@"
++	$(Q)$(CC) $(CFLAGS) -MD -MP -MF $(@:.o=.d) -c $< -o $@
++
++$(OBJ_DIRS):
++	$(Q)mkdir -p $@
++
++clean:
++	$(Q)rm -rf $(LIB) $(BUILD)
++
++-include $(DEPS)
+diff --git a/middleware/src/mp4_format/src/libflv/README.md b/middleware/src/mp4_format/src/libflv/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fea6ad0a1facbea53f47e2ea97db694335de8c85
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/README.md
+@@ -0,0 +1,19 @@
++# EdgeOS libflv compatibility subset
++
++This directory carries only the H.264 FLV muxing code required by the EdgeOS
++RTMP publisher and playback server. It intentionally excludes the historical
++demuxer, file reader/writer, audio codecs, H.265/H.266, AV1, and test media.
++
++The SDK snapshot was imported from the official `kendryte/k230_sdk` commit
++`8074e1e1adde7587d36eca6745342c14f1dcd8fb`. Its `flv-muxer.c` Git blob matches
++`ireader/media-server` commit
++`fd91aefafd6d59f78de1043d4f7312e0fad25f67`; the small compatibility muxer in
++this directory is derived from that implementation. The code is distributed
++under the accompanying upstream MIT `LICENSE`.
++
++Local warning fixes remove an impossible uint8 range test, preserve a signed
++AVCC length error, and reject an AVC configuration length that cannot be
++represented by the public `int` API.
++
++The build creates `libflv.a` from source and installs only the public
++`flv-muxer.h` and `flv-proto.h` headers. No precompiled library is stored here.
+diff --git a/middleware/src/mp4_format/src/libflv/include/flv-header.h b/middleware/src/mp4_format/src/libflv/include/flv-header.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e11f1d4505c6b2e9e645766cedfa3b498e70b8ab
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/include/flv-header.h
+@@ -0,0 +1,118 @@
++#ifndef _flv_header_h_
++#define _flv_header_h_
++
++#include <stdint.h>
++#include <stddef.h>
++
++#if defined(__cplusplus)
++extern "C" {
++#endif
++
++struct flv_header_t
++{
++	uint8_t FLV[3];
++	uint8_t version;
++	uint8_t audio;
++	uint8_t video;
++	uint32_t offset; // data offset
++};
++
++struct flv_tag_header_t
++{
++	uint8_t filter; // 0-No pre-processing required
++	uint8_t type; // 8-audio, 9-video, 18-script data
++	uint32_t size; // data size
++	uint32_t timestamp;
++	uint32_t streamId;
++};
++
++struct flv_audio_tag_header_t
++{
++	uint8_t codecid;	/// audio codec id: FLV_AUDIO_AAC
++	uint8_t rate;		/// audio sample frequence: 0-5.5 kHz, 1-11 kHz, 2-22 kHz, 3-44 kHz
++	uint8_t bits;		/// audio sample bits: 0-8 bit samples, 1-16-bit samples
++	uint8_t channels;	/// audio channel count: 0-Mono sound, 1-Stereo sound
++	uint8_t avpacket;	/// AAC only:FLV_SEQUENCE_HEADER/FLV_AVPACKET
++};
++
++struct flv_video_tag_header_t
++{
++	uint8_t codecid;	/// video codec id: FLV_VIDEO_H264
++	uint8_t keyframe;	/// video frame type: 1-key frame, 2-inter frame
++	uint8_t avpacket;	/// H.264/H.265/AV1 only:FLV_SEQUENCE_HEADER/FLV_AVPACKET/FLV_END_OF_SEQUENCE
++	int32_t cts;		/// video composition time(PTS - DTS), AVC/HEVC/AV1 only
++};
++
++/// Read FLV File Header
++/// @return >=0-header length in byte, <0-error
++int flv_header_read(struct flv_header_t* flv, const uint8_t* buf, size_t len);
++
++/// Write FLV File Header
++/// @param[in] audio 1-has audio, 0-don't have
++/// @param[in] video 1-has video, 0-don't have
++/// @param[out] buf flv header buffer
++/// @param[out] len flv header length
++/// @return >=0-header length in byte, <0-error
++int flv_header_write(int audio, int video, uint8_t* buf, size_t len);
++
++
++/// Read FLV Tag Header
++/// @return >=0-header length in byte, <0-error
++int flv_tag_header_read(struct flv_tag_header_t* tag, const uint8_t* buf, size_t len);
++
++/// Write FLV Tag Header
++/// @param[out] buf flv tag header buffer
++/// @param[out] len flv tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_tag_header_write(const struct flv_tag_header_t* tag, uint8_t* buf, size_t len);
++
++
++/// Read FLV Audio Tag Header
++/// @param[out] audio flv audio parameter
++/// @param[in] buf flv audio tag header buffer
++/// @param[in] len flv audio tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_audio_tag_header_read(struct flv_audio_tag_header_t* audio, const uint8_t* buf, size_t len);
++
++/// Write FLV Audio Tag Header
++/// @param[in] audio flv audio parameter
++/// @param[out] buf flv audio tag header buffer
++/// @param[out] len flv audio tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_audio_tag_header_write(const struct flv_audio_tag_header_t* audio, uint8_t* buf, size_t len);
++
++
++/// Read FLV Video Tag Header
++/// @param[out] video flv video parameter
++/// @param[in] buf flv video tag header buffer
++/// @param[in] len flv video tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_video_tag_header_read(struct flv_video_tag_header_t* video, const uint8_t* buf, size_t len);
++
++/// Write FLV Video Tag Header
++/// @param[in] video flv video parameter
++/// @param[out] buf flv video tag header buffer
++/// @param[out] len flv video tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_video_tag_header_write(const struct flv_video_tag_header_t* video, uint8_t* buf, size_t len);
++
++
++/// Read FLV Data Tag Header
++/// @return >=0-header length in byte, <0-error
++int flv_data_tag_header_read(const uint8_t* buf, size_t len);
++
++/// Write FLV Data Tag Header
++/// @param[out] buf flv data tag header buffer
++/// @param[out] len flv data tag header length
++/// @return >=0-header length in byte, <0-error
++int flv_data_tag_header_write(uint8_t* buf, size_t len);
++
++
++/// Read/Write FLV previous tag size
++int flv_tag_size_read(const uint8_t* buf, size_t len, uint32_t* size);
++int flv_tag_size_write(uint8_t* buf, size_t len, uint32_t size);
++
++#if defined(__cplusplus)
++}
++#endif
++#endif /* !_flv_header_h_ */
+diff --git a/middleware/src/mp4_format/src/libflv/include/flv-muxer.h b/middleware/src/mp4_format/src/libflv/include/flv-muxer.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c3ec1f34171b7d0f93f465781d0d89ff846ccfa
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/include/flv-muxer.h
+@@ -0,0 +1,37 @@
++/*
++ * H.264-only compatibility subset for EdgeOS RTMP applications.
++ * Derived from ireader/media-server's MIT-licensed libflv.
++ * SPDX-License-Identifier: MIT
++ */
++#ifndef _flv_muxer_h_
++#define _flv_muxer_h_
++
++#include <stddef.h>
++#include <stdint.h>
++
++#if defined(__cplusplus)
++extern "C" {
++#endif
++
++typedef struct flv_muxer_t flv_muxer_t;
++
++/// Video: FLV VideoTagHeader + AVCVIDEOPACKET: AVCDecoderConfigurationRecord
++/// (ISO 14496-15) / one or more NALUs (four-byte length + NALU).
++/// @param[in] data FLV video data without the FLV tag header
++/// @param[in] type FLV_TYPE_VIDEO
++///@return 0-ok, other-error
++typedef int (*flv_muxer_handler)(void* param, int type, const void* data, size_t bytes, uint32_t timestamp);
++
++flv_muxer_t* flv_muxer_create(flv_muxer_handler handler, void* param);
++void flv_muxer_destroy(flv_muxer_t* muxer);
++
++/// Re-create the AVC sequence header.
++int flv_muxer_reset(flv_muxer_t* muxer);
++
++/// @param[in] data h.264 annexb bitstream: H.264 start code + H.264 NALU, 0x0000000168...
++int flv_muxer_avc(flv_muxer_t* muxer, const void* data, size_t bytes, uint32_t pts, uint32_t dts);
++
++#if defined(__cplusplus)
++}
++#endif
++#endif /* !_flv_muxer_h_ */
+diff --git a/middleware/src/mp4_format/src/libflv/include/flv-proto.h b/middleware/src/mp4_format/src/libflv/include/flv-proto.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..acda45223b1335e09d0969074ff752758ab4d414
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/include/flv-proto.h
+@@ -0,0 +1,75 @@
++#ifndef _flv_proto_h_
++#define _flv_proto_h_
++
++// FLV Tag Type
++#define FLV_TYPE_AUDIO		8
++#define FLV_TYPE_VIDEO		9
++#define FLV_TYPE_SCRIPT		18
++
++// FLV Audio Type
++#define FLV_AUDIO_LPCM		(0 << 4) // Linear PCM, platform endian
++#define FLV_AUDIO_ADPCM		(1 << 4)
++#define FLV_AUDIO_MP3		(2 << 4)
++#define FLV_AUDIO_LLPCM		(3 << 4) // Linear PCM, little endian
++#define FLV_AUDIO_G711A		(7 << 4) // G711 A-law
++#define FLV_AUDIO_G711U     (8 << 4) // G711 mu-law
++#define FLV_AUDIO_AAC		(10 << 4)
++#define FLV_AUDIO_SPEEX		(11 << 4)
++#define FLV_AUDIO_OPUS		(13 << 4)
++#define FLV_AUDIO_MP3_8K	(14 << 4) // MP3 8 kHz
++#define FLV_AUDIO_DEVIDE	(15 << 4) // Device-specific sound
++#define FLV_AUDIO_ASC		(0x1000 | FLV_AUDIO_AAC)	// AudioSpecificConfig(ISO-14496-3)
++#define FLV_AUDIO_OPUS_HEAD	(0x1100 | FLV_AUDIO_OPUS)// opus-codec.org
++
++// FLV Video Type
++#define FLV_VIDEO_H263		2 // Sorenson H.263
++#define FLV_VIDEO_SCREEN	3 // Screen video
++#define FLV_VIDEO_VP6		4 // On2 VP6
++#define FLV_VIDEO_H264		7 // AVC
++#define FLV_VIDEO_H265		12 // https://github.com/CDN-Union/H265
++#define FLV_VIDEO_AV1		13 // https://aomediacodec.github.io/av1-isobmff
++#define FLV_VIDEO_H266		14
++#define FLV_VIDEO_AVCC		(0x2000 | FLV_VIDEO_H264) // AVCDecoderConfigurationRecord(ISO-14496-15)
++#define FLV_VIDEO_HVCC		(0x2100 | FLV_VIDEO_H265) // HEVCDecoderConfigurationRecord(ISO-14496-15)
++#define FLV_VIDEO_AV1C		(0x2200 | FLV_VIDEO_AV1)  // AV1CodecConfigurationRecord(av1-isobmff)
++#define FLV_VIDEO_VVCC		(0x2300 | FLV_VIDEO_H266) // VVCDecoderConfigurationRecord(ISO-14496-15)
++
++#define FLV_SCRIPT_METADATA	0x4000 // onMetaData
++
++enum
++{
++	FLV_SEQUENCE_HEADER					= 0, // AVC/AAC sequence header
++	FLV_AVPACKET						= 1, // AVC NALU / AAC raw
++	FLV_END_OF_SEQUENCE					= 2, // AVC end of sequence (lower level NALU sequence ender is not required or supported)
++};
++
++enum
++{
++	FLV_VIDEO_KEY_FRAME					= 1, // key frame (for AVC, a seekable frame)
++	FLV_VIDEO_INTER_FRAME				= 2, // inter frame (for AVC, a non-seekable frame)
++	FLV_VIDEO_DISPOSABLE_INTER_FRAME	= 3, // H.263 only
++	FLV_VIDEO_GENERATED_KEY_FRAME		= 4, // generated key frame (reserved for server use only)
++	FLV_VIDEO_COMMAND_FRAME				= 5, // video info/command frame
++};
++
++enum
++{
++	FLV_SOUND_RATE_5500					= 0, // 5.5 kHz
++	FLV_SOUND_RATE_11025				= 1, // 11 kHz
++	FLV_SOUND_RATE_22050				= 2, // 22 kHz
++	FLV_SOUND_RATE_44100				= 3, // 44 kHz
++};
++
++enum
++{
++	FLV_SOUND_BIT_8						= 0, // 8-bit samples
++	FLV_SOUND_BIT_16					= 1, // 16-bit samples
++};
++
++enum
++{
++	FLV_SOUND_CHANNEL_MONO				= 0, // 1-channel
++	FLV_SOUND_CHANNEL_STEREO			= 1, // 2-channels
++};
++
++#endif /* !_flv_proto_h_ */
+diff --git a/middleware/src/mp4_format/src/libflv/include/mpeg4-avc.h b/middleware/src/mp4_format/src/libflv/include/mpeg4-avc.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..939eb89e61b3146b6648800709a95fc72b0b4104
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/include/mpeg4-avc.h
+@@ -0,0 +1,76 @@
++#ifndef _mpeg4_avc_h_
++#define _mpeg4_avc_h_
++
++#include <stdint.h>
++#include <stddef.h>
++
++#if defined(__cplusplus)
++extern "C" {
++#endif
++
++struct mpeg4_avc_t
++{
++//	uint8_t version; // 1-only
++	uint8_t profile;
++	uint8_t compatibility; // constraint_set[0-5]_flag
++	uint8_t level;
++	uint8_t nalu; // NALUnitLength = (lengthSizeMinusOne + 1), default 4(0x03+1)
++
++	uint8_t nb_sps;
++	uint8_t nb_pps;
++
++	struct mpeg4_avc_sps_t
++	{
++		uint16_t bytes;
++		uint8_t* data;
++	}  sps[32]; // [0-31]
++
++	struct mpeg4_avc_pps_t
++	{
++		uint16_t bytes;
++		uint8_t* data;
++	} pps[256];
++
++	// extension
++	uint8_t chroma_format_idc;
++	uint8_t bit_depth_luma_minus8;
++	uint8_t bit_depth_chroma_minus8;
++
++    uint8_t data[4 * 1024];
++	size_t off;
++};
++
++// load avc from AVCDecoderConfigurationRecord
++int mpeg4_avc_decoder_configuration_record_load(const uint8_t* data, size_t bytes, struct mpeg4_avc_t* avc);
++
++int mpeg4_avc_decoder_configuration_record_save(const struct mpeg4_avc_t* avc, uint8_t* data, size_t bytes);
++
++// load avc from annex-b bitstream
++int mpeg4_avc_from_nalu(const uint8_t* data, size_t bytes, struct mpeg4_avc_t* avc);
++
++int mpeg4_avc_to_nalu(const struct mpeg4_avc_t* avc, uint8_t* data, size_t bytes);
++
++int mpeg4_avc_codecs(const struct mpeg4_avc_t* avc, char* codecs, size_t bytes);
++
++/// @param[out] vcl 0-non VCL, 1-IDR, 2-P/B
++/// @return <=0-error, >0-output bytes
++int h264_annexbtomp4(struct mpeg4_avc_t* avc, const void* data, size_t bytes, void* out, size_t size, int* vcl, int* update);
++
++/// @return <=0-error, >0-output bytes
++int h264_mp4toannexb(const struct mpeg4_avc_t* avc, const void* data, size_t bytes, void* out, size_t size);
++
++/// h264_is_new_access_unit H.264 new access unit(frame)
++/// @return 1-new access, 0-not a new access
++int h264_is_new_access_unit(const uint8_t* nalu, size_t bytes);
++
++/// H.264 nal unit split
++int mpeg4_h264_annexb_nalu(const void* h264, size_t bytes, void (*handler)(void* param, const uint8_t* nalu, size_t bytes), void* param);
++
++/// Detect H.264 bitstrem type: H.264 Annexb or MP4-AVCC
++/// @return 0-annexb, >0-avcc length, <0-error
++int mpeg4_h264_bitstream_format(const uint8_t* h264, size_t bytes);
++
++#if defined(__cplusplus)
++}
++#endif
++#endif /* !_mpeg4_avc_h_ */
+diff --git a/middleware/src/mp4_format/src/libflv/source/flv-header.c b/middleware/src/mp4_format/src/libflv/source/flv-header.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..2716c3406e1c4d65d799f29033c6156d321f6591
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/source/flv-header.c
+@@ -0,0 +1,238 @@
++#include "flv-header.h"
++#include "flv-proto.h"
++#include <assert.h>
++#include <errno.h>
++
++#define N_TAG_SIZE			4	// previous tag size
++#define FLV_HEADER_SIZE		9	// DataOffset included
++#define FLV_TAG_HEADER_SIZE	11	// StreamID included
++
++static inline uint32_t be_read_uint32(const uint8_t* ptr)
++{
++	return (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
++}
++
++static inline void be_write_uint32(uint8_t* ptr, uint32_t val)
++{
++	ptr[0] = (uint8_t)((val >> 24) & 0xFF);
++	ptr[1] = (uint8_t)((val >> 16) & 0xFF);
++	ptr[2] = (uint8_t)((val >> 8) & 0xFF);
++	ptr[3] = (uint8_t)(val & 0xFF);
++}
++
++int flv_header_read(struct flv_header_t* flv, const uint8_t* buf, size_t len)
++{
++	if (len < FLV_HEADER_SIZE || 'F' != buf[0] || 'L' != buf[1] || 'V' != buf[2])
++	{
++		assert(0);
++		return -1;
++	}
++
++	flv->FLV[0] = buf[0];
++	flv->FLV[1] = buf[1];
++	flv->FLV[2] = buf[2];
++	flv->version = buf[3];
++
++	assert(0x00 == (buf[4] & 0xF8) && 0x00 == (buf[4] & 0x20));
++	flv->audio = (buf[4] >> 2) & 0x01;
++	flv->video = buf[4] & 0x01;
++	flv->offset = be_read_uint32(buf + 5);
++
++	return FLV_HEADER_SIZE;
++}
++
++int flv_tag_header_read(struct flv_tag_header_t* tag, const uint8_t* buf, size_t len)
++{
++	if (len < FLV_TAG_HEADER_SIZE)
++	{
++		assert(0);
++		return -1;
++	}
++
++	// TagType
++	tag->type = buf[0] & 0x1F;
++	tag->filter = (buf[0] >> 5) & 0x01;
++	assert(FLV_TYPE_VIDEO == tag->type || FLV_TYPE_AUDIO == tag->type || FLV_TYPE_SCRIPT == tag->type);
++
++	// DataSize
++	tag->size = ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] << 8) | buf[3];
++
++	// TimestampExtended | Timestamp
++	tag->timestamp = ((uint32_t)buf[4] << 16) | ((uint32_t)buf[5] << 8) | buf[6] | ((uint32_t)buf[7] << 24);
++
++	// StreamID Always 0
++	tag->streamId = ((uint32_t)buf[8] << 16) | ((uint32_t)buf[9] << 8) | buf[10];
++	//assert(0 == tag->streamId);
++
++	return FLV_TAG_HEADER_SIZE;
++}
++
++int flv_audio_tag_header_read(struct flv_audio_tag_header_t* audio, const uint8_t* buf, size_t len)
++{
++	assert(len > 0);
++	audio->codecid = (buf[0] & 0xF0) /*>> 4*/;
++	audio->rate = (buf[0] & 0x0C) >> 2;
++	audio->bits = (buf[0] & 0x02) >> 1;
++	audio->channels = buf[0] & 0x01;
++	audio->avpacket = FLV_AVPACKET;
++
++	if (FLV_AUDIO_AAC == audio->codecid || FLV_AUDIO_OPUS == audio->codecid)
++	{
++		if (len < 2)
++		{
++			assert(0);
++			return -1;
++		}
++		audio->avpacket = buf[1];
++		assert(FLV_SEQUENCE_HEADER == audio->avpacket || FLV_AVPACKET == audio->avpacket);
++		return 2;
++	}
++	else
++	{
++		return 1;
++	}
++}
++
++int flv_video_tag_header_read(struct flv_video_tag_header_t* video, const uint8_t* buf, size_t len)
++{
++	assert(len > 0);
++	video->keyframe = (buf[0] & 0xF0) >> 4;
++	video->codecid = (buf[0] & 0x0F);
++	video->avpacket = FLV_AVPACKET;
++
++	if (FLV_VIDEO_H264 == video->codecid || FLV_VIDEO_H265 == video->codecid || FLV_VIDEO_H266 == video->codecid || FLV_VIDEO_AV1 == video->codecid)
++	{
++		if (len < 5)
++			return -1;
++
++		video->avpacket = buf[1]; // AVCPacketType
++		video->cts = ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 8) | buf[4];
++		//if (video->cts >= (1 << 23)) video->cts -= (1 << 24);
++		video->cts = (video->cts + 0xFF800000) ^ 0xFF800000; // signed 24-integer
++		assert(FLV_SEQUENCE_HEADER == video->avpacket || FLV_AVPACKET == video->avpacket || FLV_END_OF_SEQUENCE == video->avpacket);
++		return 5;
++	}
++	else
++	{
++		return 1;
++	}
++}
++
++int flv_data_tag_header_read(const uint8_t* buf, size_t len)
++{
++	(void)buf;
++	return (int)len;
++}
++
++int flv_header_write(int audio, int video, uint8_t* buf, size_t len)
++{
++	if (len < FLV_HEADER_SIZE)
++	{
++		assert(0);
++		return -1;
++	}
++
++	buf[0] = 'F'; // FLV signature
++	buf[1] = 'L';
++	buf[2] = 'V';
++	buf[3] = 0x01; // File version
++	buf[4] = ((audio ? 1 : 0) << 2) | (video ? 1 : 0); // Type flags (audio & video)
++	be_write_uint32(buf + 5, FLV_HEADER_SIZE); // Data offset
++	return FLV_HEADER_SIZE;
++}
++
++int flv_tag_header_write(const struct flv_tag_header_t* tag, uint8_t* buf, size_t len)
++{
++	if (len < FLV_TAG_HEADER_SIZE)
++	{
++		assert(0);
++		return -1;
++	}
++
++	// TagType
++	assert(FLV_TYPE_VIDEO == tag->type || FLV_TYPE_AUDIO == tag->type || FLV_TYPE_SCRIPT == tag->type);
++	buf[0] = (tag->type & 0x1F) | ((tag->filter & 0x01) << 5);
++
++	// DataSize
++	buf[1] = (tag->size >> 16) & 0xFF;
++	buf[2] = (tag->size >> 8) & 0xFF;
++	buf[3] = tag->size & 0xFF;
++
++	// Timestamp
++	buf[4] = (tag->timestamp >> 16) & 0xFF;
++	buf[5] = (tag->timestamp >> 8) & 0xFF;
++	buf[6] = (tag->timestamp >> 0) & 0xFF;
++	buf[7] = (tag->timestamp >> 24) & 0xFF; // Timestamp Extended
++
++	// StreamID(Always 0)
++	buf[8] = (tag->streamId >> 16) & 0xFF;
++	buf[9] = (tag->streamId >> 8) & 0xFF;
++	buf[10] = (tag->streamId) & 0xFF;
++
++	return FLV_TAG_HEADER_SIZE;
++}
++
++int flv_audio_tag_header_write(const struct flv_audio_tag_header_t* audio, uint8_t* buf, size_t len)
++{
++	if ((int)len < 1 + ((FLV_AUDIO_AAC == audio->codecid || FLV_AUDIO_OPUS == audio->codecid)? 1 : 0))
++		return -1;
++
++	if (FLV_AUDIO_AAC == audio->codecid || FLV_AUDIO_OPUS == audio->codecid)
++	{
++		assert(FLV_SEQUENCE_HEADER == audio->avpacket || FLV_AVPACKET == audio->avpacket);
++		buf[0] = (audio->codecid /* <<4 */) /* SoundFormat */ | (3 << 2) /* 44k-SoundRate */ | (1 << 1) /* 16-bit samples */ | 1 /* Stereo sound */;
++		buf[1] = audio->avpacket; // AACPacketType
++		return 2;
++	}
++	else
++	{
++		buf[0] = (audio->codecid /* <<4 */) | ((audio->rate & 0x03) << 2) | ((audio->bits & 0x01) << 1) | (audio->channels & 0x01);
++		return 1;
++	}
++}
++
++int flv_video_tag_header_write(const struct flv_video_tag_header_t* video, uint8_t* buf, size_t len)
++{
++	if (len < 1)
++		return -1;
++
++	buf[0] = (video->keyframe << 4) /*FrameType*/ | (video->codecid & 0x0F) /*CodecID*/;
++
++	if (FLV_VIDEO_H264 == video->codecid || FLV_VIDEO_H265 == video->codecid || FLV_VIDEO_H266 == video->codecid || FLV_VIDEO_AV1 == video->codecid)
++	{
++		assert(FLV_SEQUENCE_HEADER == video->avpacket || FLV_AVPACKET == video->avpacket || FLV_END_OF_SEQUENCE == video->avpacket);
++		if (len < 5)
++			return -1;
++
++		buf[1] = video->avpacket; // AVCPacketType
++		buf[2] = (video->cts >> 16) & 0xFF;
++		buf[3] = (video->cts >> 8) & 0xFF;
++		buf[4] = video->cts & 0xFF;
++		return 5;
++	}
++
++	return 1;
++}
++
++int flv_data_tag_header_write(uint8_t* buf, size_t len)
++{
++    (void)buf;
++    (void)len;
++	return 0;
++}
++
++int flv_tag_size_read(const uint8_t* buf, size_t len, uint32_t* size)
++{
++    if(len < 4)
++        return -1;
++    *size = be_read_uint32(buf);
++    return 4;
++}
++
++int flv_tag_size_write(uint8_t* buf, size_t len, uint32_t size)
++{
++    if(len < 4)
++        return -1;
++    be_write_uint32(buf, size);
++    return 4;
++}
+diff --git a/middleware/src/mp4_format/src/libflv/source/flv-muxer.c b/middleware/src/mp4_format/src/libflv/source/flv-muxer.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..c7097a007b7697b6da2a3e8873f3f4c8d1e8d234
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/source/flv-muxer.c
+@@ -0,0 +1,148 @@
++/*
++ * H.264-only compatibility subset derived from ireader/media-server libflv.
++ * SPDX-License-Identifier: MIT
++ */
++#include "flv-muxer.h"
++#include "flv-proto.h"
++#include "flv-header.h"
++#include "mpeg4-avc.h"
++
++#include <assert.h>
++#include <errno.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++
++struct flv_muxer_t
++{
++    flv_muxer_handler handler;
++    void *param;
++    uint8_t video_sequence_header;
++    struct mpeg4_avc_t avc;
++    int vcl;
++    int update;
++    uint8_t *ptr;
++    size_t bytes;
++    size_t capacity;
++};
++
++flv_muxer_t *flv_muxer_create(flv_muxer_handler handler, void *param)
++{
++    flv_muxer_t *flv;
++
++    if (handler == NULL)
++        return NULL;
++
++    flv = (flv_muxer_t *)calloc(1, sizeof(*flv));
++    if (flv == NULL)
++        return NULL;
++
++    flv->handler = handler;
++    flv->param = param;
++    return flv;
++}
++
++void flv_muxer_destroy(flv_muxer_t *flv)
++{
++    if (flv == NULL)
++        return;
++
++    free(flv->ptr);
++    free(flv);
++}
++
++int flv_muxer_reset(flv_muxer_t *flv)
++{
++    if (flv == NULL)
++        return -EINVAL;
++
++    memset(&flv->avc, 0, sizeof(flv->avc));
++    flv->video_sequence_header = 0;
++    flv->vcl = 0;
++    flv->update = 0;
++    flv->bytes = 0;
++    return 0;
++}
++
++static int flv_muxer_alloc(flv_muxer_t *flv, size_t bytes)
++{
++    void *ptr = realloc(flv->ptr, bytes);
++    if (ptr == NULL)
++        return -ENOMEM;
++
++    flv->ptr = (uint8_t *)ptr;
++    flv->capacity = bytes;
++    return 0;
++}
++
++static int flv_muxer_h264(flv_muxer_t *flv, uint32_t pts, uint32_t dts)
++{
++    struct flv_video_tag_header_t video;
++    int bytes;
++    int ret;
++
++    memset(&video, 0, sizeof(video));
++    video.codecid = FLV_VIDEO_H264;
++    if (flv->update && flv->avc.nb_sps > 0 && flv->avc.nb_pps > 0)
++    {
++        video.keyframe = FLV_VIDEO_KEY_FRAME;
++        video.avpacket = FLV_SEQUENCE_HEADER;
++        if (flv_video_tag_header_write(&video, flv->ptr + flv->bytes,
++                                       flv->capacity - flv->bytes) != 5)
++            return -EINVAL;
++
++        bytes = mpeg4_avc_decoder_configuration_record_save(
++            &flv->avc, flv->ptr + flv->bytes + 5,
++            flv->capacity - flv->bytes - 5);
++        if (bytes <= 0)
++            return -EINVAL;
++
++        flv->video_sequence_header = 1;
++        assert(flv->bytes + (size_t)bytes + 5 <= flv->capacity);
++        ret = flv->handler(flv->param, FLV_TYPE_VIDEO,
++                           flv->ptr + flv->bytes, (size_t)bytes + 5, dts);
++        if (ret != 0)
++            return ret;
++    }
++
++    if (flv->vcl && flv->video_sequence_header)
++    {
++        video.cts = (int32_t)(pts - dts);
++        video.keyframe = flv->vcl == 1 ? FLV_VIDEO_KEY_FRAME
++                                       : FLV_VIDEO_INTER_FRAME;
++        video.avpacket = FLV_AVPACKET;
++        if (flv_video_tag_header_write(&video, flv->ptr,
++                                       flv->capacity) != 5)
++            return -EINVAL;
++        return flv->handler(flv->param, FLV_TYPE_VIDEO, flv->ptr,
++                            flv->bytes, dts);
++    }
++
++    return 0;
++}
++
++int flv_muxer_avc(flv_muxer_t *flv, const void *data, size_t bytes,
++                  uint32_t pts, uint32_t dts)
++{
++    size_t capacity;
++    int payload_bytes;
++
++    if (flv == NULL || data == NULL || bytes == 0)
++        return -EINVAL;
++    if (bytes > SIZE_MAX - sizeof(flv->avc))
++        return -E2BIG;
++
++    capacity = bytes + sizeof(flv->avc);
++    if (flv->capacity < capacity && flv_muxer_alloc(flv, capacity) != 0)
++        return -ENOMEM;
++
++    flv->bytes = 5;
++    payload_bytes = h264_annexbtomp4(
++        &flv->avc, data, bytes, flv->ptr + flv->bytes,
++        flv->capacity - flv->bytes, &flv->vcl, &flv->update);
++    if (payload_bytes <= 0)
++        return -EINVAL;
++    flv->bytes += (size_t)payload_bytes;
++
++    return flv_muxer_h264(flv, pts, dts);
++}
+diff --git a/middleware/src/mp4_format/src/libflv/source/mpeg4-annexbtomp4.c b/middleware/src/mp4_format/src/libflv/source/mpeg4-annexbtomp4.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..980d857f2c4ca764d960c2efa98312dec205e761
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/source/mpeg4-annexbtomp4.c
+@@ -0,0 +1,518 @@
++// ISO/IEC 14496-1:2010(E)
++// Annex I: Usage of ITU-T Recommendation H.264 | ISO/IEC 14496-10 AVC (p150)
++//
++// 1. Start Codes shall not be present in the stream. The field indicating the size of each following NAL unit
++//    shall be added before NAL unit.The size of this field is defined in DecoderSpecificInfo.
++// 2. It is recommended encapsulating one NAL unit in one SL packet when it is delivered over lossy environment.
++
++#include "mpeg4-avc.h"
++#include <string.h>
++#include <assert.h>
++#include <stdint.h>
++#include <stddef.h>
++#include <errno.h>
++
++#define H264_NAL_IDR		5 // Coded slice of an IDR picture
++#define H264_NAL_SPS		7 // Sequence parameter set
++#define H264_NAL_PPS		8 // Picture parameter set
++#define H264_NAL_AUD		9 // Access unit delimiter
++
++#define H2645_BITSTREAM_FORMAT_DETECT
++
++struct h264_annexbtomp4_handle_t
++{
++	struct mpeg4_avc_t* avc;
++	int errcode;
++	int* update; // avc sps/pps update flags
++	int* vcl;
++
++	uint8_t* out;
++	size_t bytes;
++	size_t capacity;
++};
++
++static const uint8_t* h264_startcode(const uint8_t *data, size_t bytes)
++{
++	size_t i;
++	for (i = 2; i + 1 < bytes; i++)
++	{
++		if (0x01 == data[i] && 0x00 == data[i - 1] && 0x00 == data[i - 2])
++			return data + i + 1;
++	}
++
++	return NULL;
++}
++
++/// @return >0-ok, <=0-error
++static inline int h264_avcc_length(const uint8_t* h264, size_t bytes, size_t avcc)
++{
++	size_t i;
++	uint32_t n;
++
++	n = 0;
++	assert(3 <= avcc && avcc <= 4);
++	for (i = 0; i < avcc && i < bytes; i++)
++		n = (n << 8) | h264[i];
++	return avcc >= bytes ? -1 : (int)n;
++}
++
++/// @return 1-true, 0-false
++static int mpeg4_h264_avcc_bitstream_valid(const uint8_t* h264, size_t bytes, size_t avcc)
++{
++	int n;
++
++	while(avcc + 1 < bytes)
++	{
++		n = h264_avcc_length(h264, bytes, avcc);
++		if (n < 0 || (size_t)n + avcc > bytes)
++			return 0; // invalid
++
++		h264 += (size_t)n + avcc;
++		bytes -= (size_t)n + avcc;
++	}
++
++	return 0 == bytes ? 1 : 0;
++}
++
++/// @return 0-annexb, >0-avcc, <0-error
++int mpeg4_h264_bitstream_format(const uint8_t* h264, size_t bytes)
++{
++	uint32_t n;
++	if (bytes < 4)
++		return -1;
++
++	n = ((uint32_t)h264[0]) << 16 | ((uint32_t)h264[1]) << 8 | ((uint32_t)h264[2]);
++	if (0 == n && h264[3] <= 1)
++	{
++		return 0; // annexb
++	}
++	else if(1 == n)
++	{
++		// try avcc & annexb
++		return mpeg4_h264_avcc_bitstream_valid(h264, bytes, 4) ? 4 : 0;
++	}
++	else
++	{
++		// try avcc 4/3 bytes
++		return mpeg4_h264_avcc_bitstream_valid(h264, bytes, 4) ? 4 : (mpeg4_h264_avcc_bitstream_valid(h264, bytes, 3) ? 3 : -1);
++	}
++}
++
++static int mpeg4_h264_avcc_nalu(const void* h264, size_t bytes, int avcc, void (*handler)(void* param, const uint8_t* nalu, size_t bytes), void* param)
++{
++	uint32_t n;
++	const uint8_t* p, * end;
++
++	p = (const uint8_t*)h264;
++	end = (const uint8_t*)h264 + bytes;
++	for(n = h264_avcc_length(p, (int)(end - p), avcc); p + n + avcc <= end; n = h264_avcc_length(p, (int)(end - p), avcc))
++	{
++		assert(n > 0);
++		if (n > 0)
++		{
++			handler(param, p + avcc, (int)n);
++		}
++
++		p += n + avcc;
++	}
++
++	return 0;
++}
++
++///@param[in] h264 H.264 byte stream format data(A set of NAL units)
++int mpeg4_h264_annexb_nalu(const void* h264, size_t bytes, void (*handler)(void* param, const uint8_t* nalu, size_t bytes), void* param)
++{
++	ptrdiff_t n;
++	const uint8_t* p, *next, *end;
++
++#if defined(H2645_BITSTREAM_FORMAT_DETECT)
++	int avcc;
++	avcc = mpeg4_h264_bitstream_format(h264, bytes);
++	if (avcc > 0)
++		return mpeg4_h264_avcc_nalu(h264, bytes, avcc, handler, param);
++#endif
++
++	end = (const uint8_t*)h264 + bytes;
++	p = h264_startcode((const uint8_t*)h264, bytes);
++
++	while (p)
++	{
++		next = h264_startcode(p, (int)(end - p));
++		if (next)
++		{
++			n = next - p - 3;
++		}
++		else
++		{
++			n = end - p;
++		}
++
++		while (n > 0 && 0 == p[n - 1]) n--; // filter tailing zero
++
++		assert(n > 0);
++		if (n > 0)
++		{
++			handler(param, p, (int)n);
++		}
++
++		p = next;
++	}
++
++	return 0;
++}
++
++uint8_t mpeg4_h264_read_ue(const uint8_t* data, size_t bytes, size_t* offset)
++{
++	int bit, i;
++	int leadingZeroBits = -1;
++
++	for (bit = 0; !bit && *offset / 8 < bytes; ++leadingZeroBits)
++	{
++		bit = (data[*offset / 8] >> (7 - (*offset % 8))) & 0x01;
++		++*offset;
++	}
++
++	bit = 0;
++	assert(leadingZeroBits < 32);
++	for (i = 0; i < leadingZeroBits && *offset / 8 < bytes; i++)
++	{
++		bit = (bit << 1) | ((data[*offset / 8] >> (7 - (*offset % 8))) & 0x01);
++		++*offset;
++	}
++
++	return (uint8_t)((1 << leadingZeroBits) - 1 + bit);
++}
++
++static void mpeg4_avc_remove(struct mpeg4_avc_t* avc, uint8_t* ptr, size_t bytes, const uint8_t* end)
++{
++	uint8_t i;
++	assert(ptr >= avc->data && ptr + bytes <= end && end <= avc->data + sizeof(avc->data));
++	memmove(ptr, ptr + bytes, end - ptr - bytes);
++
++	for (i = 0; i < avc->nb_sps; i++)
++	{
++		if (avc->sps[i].data > ptr)
++			avc->sps[i].data -= bytes;
++	}
++
++	for (i = 0; i < avc->nb_pps; i++)
++	{
++		if (avc->pps[i].data > ptr)
++			avc->pps[i].data -= bytes;
++	}
++}
++
++static int h264_sps_copy(struct mpeg4_avc_t* avc, const uint8_t* nalu, size_t bytes)
++{
++	size_t i;
++	size_t offset;
++    uint8_t spsid;
++
++	if (bytes < 4 + 1)
++	{
++		assert(0);
++		return -1; // invalid length
++	}
++
++	offset = 4 * 8; // 1-NALU + 3-profile+flags+level
++	spsid = mpeg4_h264_read_ue(nalu, bytes, &offset);
++
++	for (i = 0; i < avc->nb_sps; i++)
++	{
++		offset = 4 * 8; // reset offset
++		if (spsid == mpeg4_h264_read_ue(avc->sps[i].data, avc->sps[i].bytes, &offset))
++		{
++			if (bytes == avc->sps[i].bytes && 0 == memcmp(nalu, avc->sps[i].data, bytes))
++				return 0; // do nothing
++
++			if (bytes > avc->sps[i].bytes && avc->off + (bytes - avc->sps[i].bytes) > sizeof(avc->data))
++			{
++				assert(0);
++				return -1; // too big
++			}
++
++			mpeg4_avc_remove(avc, avc->sps[i].data, avc->sps[i].bytes, avc->data + avc->off);
++			avc->off -= avc->sps[i].bytes;
++
++			avc->sps[i].data = avc->data + avc->off;
++			avc->sps[i].bytes = (uint16_t)bytes;
++			memcpy(avc->sps[i].data, nalu, bytes);
++			avc->off += bytes;
++			return 1; // set update flag
++		}
++	}
++
++	// copy new
++	assert(avc->nb_sps < sizeof(avc->sps) / sizeof(avc->sps[0]));
++	if (avc->nb_sps >= sizeof(avc->sps) / sizeof(avc->sps[0])
++		|| avc->off + bytes > sizeof(avc->data))
++	{
++		assert(0);
++		return -1;
++	}
++
++	avc->sps[avc->nb_sps].data = avc->data + avc->off;
++	avc->sps[avc->nb_sps].bytes = (uint16_t)bytes;
++	memcpy(avc->sps[avc->nb_sps].data, nalu, bytes);
++	avc->off += bytes;
++	++avc->nb_sps;
++	return 1; // set update flag
++}
++
++static int h264_pps_copy(struct mpeg4_avc_t* avc, const uint8_t* nalu, size_t bytes)
++{
++	size_t i;
++    size_t offset;
++	uint8_t spsid;
++	uint8_t ppsid;
++
++	if (bytes < 1 + 1)
++	{
++		assert(0);
++		return -1; // invalid length
++	}
++
++	offset = 1 * 8; // 1-NALU
++	ppsid = mpeg4_h264_read_ue(nalu, bytes, &offset);
++	spsid = mpeg4_h264_read_ue(nalu, bytes, &offset);
++
++	for (i = 0; i < avc->nb_pps; i++)
++	{
++		offset = 1 * 8; // reset offset
++		if (ppsid == mpeg4_h264_read_ue(avc->pps[i].data, avc->pps[i].bytes, &offset) && spsid == mpeg4_h264_read_ue(avc->pps[i].data, avc->pps[i].bytes, &offset))
++		{
++			if (bytes == avc->pps[i].bytes && 0 == memcmp(nalu, avc->pps[i].data, bytes))
++				return 0; // do nothing
++
++			if (bytes > avc->pps[i].bytes && avc->off + (bytes - avc->pps[i].bytes) > sizeof(avc->data))
++			{
++				assert(0);
++				return -1; // too big
++			}
++
++			mpeg4_avc_remove(avc, avc->pps[i].data, avc->pps[i].bytes, avc->data + avc->off);
++			avc->off -= avc->pps[i].bytes;
++
++			avc->pps[i].data = avc->data + avc->off;
++			avc->pps[i].bytes = (uint16_t)bytes;
++			memcpy(avc->pps[i].data, nalu, bytes);
++			avc->off += bytes;
++			return 1; // set update flag
++		}
++	}
++
++	// fix openh264 sps/pps id cycle (0/0, 1/1, 2/2, ..., 31/31, 0/32, 1/33, ...)
++	if ((unsigned int)avc->nb_pps + 1 >= sizeof(avc->pps) / sizeof(avc->pps[0]) && avc->nb_sps > 16)
++	{
++		// replace the oldest pps
++		mpeg4_avc_remove(avc, avc->pps[0].data, avc->pps[0].bytes, avc->data + avc->off);
++		avc->off -= avc->pps[0].bytes;
++
++		avc->pps[0].data = avc->data + avc->off;
++		avc->pps[0].bytes = (uint16_t)bytes;
++		memcpy(avc->pps[0].data, nalu, bytes);
++		avc->off += bytes;
++		return 1; // set update flag
++	}
++
++	// copy new
++	assert((unsigned int)avc->nb_pps + 1 < sizeof(avc->pps) / sizeof(avc->pps[0]));
++	if ((unsigned int)avc->nb_pps + 1 >= sizeof(avc->pps) / sizeof(avc->pps[0])
++		|| avc->off + bytes > sizeof(avc->data))
++	{
++		assert(0);
++		return -1;
++	}
++
++	avc->pps[avc->nb_pps].data = avc->data + avc->off;
++	avc->pps[avc->nb_pps].bytes = (uint16_t)bytes;
++	memcpy(avc->pps[avc->nb_pps].data, nalu, bytes);
++	avc->off += bytes;
++	++avc->nb_pps; // fixme: uint8_t overflow
++	return 1; // set update flag
++}
++
++int mpeg4_avc_update(struct mpeg4_avc_t* avc, const uint8_t* nalu, size_t bytes)
++{
++	int r;
++
++	switch (nalu[0] & 0x1f)
++	{
++	case H264_NAL_SPS:
++		r = h264_sps_copy(avc, nalu, bytes);
++		if (1 == r || 1 == avc->nb_sps)
++		{
++			// update profile/level
++			avc->profile = nalu[1];
++			avc->compatibility = nalu[2];
++			avc->level = nalu[3];
++		}
++		break;
++
++	case H264_NAL_PPS:
++		r = h264_pps_copy(avc, nalu, bytes);
++		break;
++
++	default:
++		r = 0;
++	}
++
++	return r;
++}
++
++static void h264_handler(void* param, const uint8_t* nalu, size_t bytes)
++{
++	int r;
++	uint8_t nalutype;
++	struct h264_annexbtomp4_handle_t* mp4;
++	mp4 = (struct h264_annexbtomp4_handle_t*)param;
++
++	if (bytes < 1)
++	{
++		assert(0);
++		return;
++	}
++
++	nalutype = (nalu[0]) & 0x1f;
++#if defined(H2645_FILTER_AUD)
++	if (H264_NAL_AUD == nalutype)
++		return; // ignore AUD
++#endif
++
++	r = mpeg4_avc_update(mp4->avc, nalu, bytes);
++	if (1 == r && mp4->update)
++		*mp4->update = 1;
++	else if (r < 0)
++		mp4->errcode = r;
++
++	// IDR-1, B/P-2, other-0
++	if (mp4->vcl && 1 <= nalutype && nalutype <= H264_NAL_IDR)
++		*mp4->vcl = nalutype == H264_NAL_IDR ? 1 : 2;
++
++	if (mp4->capacity >= mp4->bytes + bytes + 4)
++	{
++		mp4->out[mp4->bytes + 0] = (uint8_t)((bytes >> 24) & 0xFF);
++		mp4->out[mp4->bytes + 1] = (uint8_t)((bytes >> 16) & 0xFF);
++		mp4->out[mp4->bytes + 2] = (uint8_t)((bytes >> 8) & 0xFF);
++		mp4->out[mp4->bytes + 3] = (uint8_t)((bytes >> 0) & 0xFF);
++		memmove(mp4->out + mp4->bytes + 4, nalu, bytes);
++		mp4->bytes += bytes + 4;
++	}
++	else
++	{
++		mp4->errcode = -E2BIG;
++	}
++}
++
++int h264_annexbtomp4(struct mpeg4_avc_t* avc, const void* data, size_t bytes, void* out, size_t size, int* vcl, int* update)
++{
++	struct h264_annexbtomp4_handle_t h;
++	memset(&h, 0, sizeof(h));
++	h.avc = avc;
++	h.vcl = vcl;
++	h.update = update;
++	h.out = (uint8_t*)out;
++	h.capacity = size;
++	if (vcl) *vcl = 0;
++	if (update) *update = 0;
++
++	mpeg4_h264_annexb_nalu(data, bytes, h264_handler, &h);
++	avc->nalu = 4;
++	return 0 == h.errcode ? (int)h.bytes : 0;
++}
++
++/// h264_is_new_access_unit H.264 new access unit(frame)
++/// @return 1-new access, 0-not a new access
++int h264_is_new_access_unit(const uint8_t* nalu, size_t bytes)
++{
++    enum { NAL_NIDR = 1, NAL_PARTITION_A = 2, NAL_IDR = 5, NAL_SEI = 6, NAL_SPS = 7, NAL_PPS = 8, NAL_AUD = 9, };
++
++    uint8_t nal_type;
++
++    if(bytes < 2)
++        return 0;
++
++    nal_type = nalu[0] & 0x1f;
++
++    // 7.4.1.2.3 Order of NAL units and coded pictures and association to access units
++    if(NAL_AUD == nal_type || NAL_SPS == nal_type || NAL_PPS == nal_type || NAL_SEI == nal_type || (14 <= nal_type && nal_type <= 18))
++        return 1;
++
++    // 7.4.1.2.4 Detection of the first VCL NAL unit of a primary coded picture
++    if(NAL_NIDR == nal_type || NAL_PARTITION_A == nal_type || NAL_IDR == nal_type)
++    {
++        // Live555 H264or5VideoStreamParser::parse
++        // The high-order bit of the byte after the "nal_unit_header" tells us whether it's
++        // the start of a new 'access unit' (and thus the current NAL unit ends an 'access unit'):
++        return (nalu[1] & 0x80) ? 1 : 0; // first_mb_in_slice
++    }
++
++    return 0;
++}
++
++#if defined(_DEBUG) || defined(DEBUG)
++static void mpeg4_h264_bitstream_format_test(void)
++{
++	const uint8_t bs3[] = { 0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	const uint8_t bs4[] = { 0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	const uint8_t bs5[] = { 0x00,0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	const uint8_t avcc3[] = { 0x00,0x00,0x06,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	const uint8_t avcc4[] = { 0x00,0x00,0x00,0x06,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	assert(0 == mpeg4_h264_bitstream_format(bs3, sizeof(bs3)));
++	assert(0 == mpeg4_h264_bitstream_format(bs4, sizeof(bs4)));
++	assert(0 == mpeg4_h264_bitstream_format(bs5, sizeof(bs5)));
++	assert(3 == mpeg4_h264_bitstream_format(avcc3, sizeof(avcc3)));
++	assert(4 == mpeg4_h264_bitstream_format(avcc4, sizeof(avcc4)));
++}
++
++static void mpeg4_annexbtomp4_test2(void)
++{
++	const uint8_t sps[] = { 0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab,0xcd, };
++	const uint8_t pps[] = { 0x00,0x00,0x00,0x01,0x28,0xce,0x3c,0x80 };
++	const uint8_t sps1[] = { 0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0x4b,0xcd, 0x01 };
++	const uint8_t pps1[] = { 0x00,0x00,0x00,0x01,0x28,0xce,0x3c,0x80, 0x01 };
++	const uint8_t sps2[] = { 0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab };
++	const uint8_t pps2[] = { 0x00,0x00,0x00,0x01,0x28,0xce,0x3c };
++
++	int vcl, update;
++	uint8_t buffer[128];
++	struct mpeg4_avc_t avc;
++	memset(&avc, 0, sizeof(avc));
++
++	h264_annexbtomp4(&avc, sps, sizeof(sps), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update);
++	h264_annexbtomp4(&avc, pps, sizeof(pps), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update && 1 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps)-4 && 0 == memcmp(avc.sps[0].data, sps+4, sizeof(sps) - 4) && 1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps) - 4 && 0 == memcmp(avc.pps[0].data, pps+4, sizeof(pps) - 4));
++
++	h264_annexbtomp4(&avc, sps1, sizeof(sps1), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update && 2 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps) - 4 && avc.sps[1].bytes == sizeof(sps1) - 4 && 0 == memcmp(avc.sps[0].data, sps+4, sizeof(sps) - 4) && 0 == memcmp(avc.sps[1].data, sps1 + 4, sizeof(sps1) - 4) && 1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps) - 4 && 0 == memcmp(avc.pps[0].data, pps + 4, sizeof(pps) - 4));
++
++	h264_annexbtomp4(&avc, pps1, sizeof(pps1), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update && 2 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps) - 4 && avc.sps[1].bytes == sizeof(sps1) - 4 && 0 == memcmp(avc.sps[0].data, sps + 4, sizeof(sps) - 4) && 0 == memcmp(avc.sps[1].data, sps1 + 4, sizeof(sps1) - 4) && 1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps1) - 4 && 0 == memcmp(avc.pps[0].data, pps1 + 4, sizeof(pps1) - 4));
++
++	h264_annexbtomp4(&avc, sps2, sizeof(sps2), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update && 2 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps2) - 4 && avc.sps[1].bytes == sizeof(sps1) - 4 && 0 == memcmp(avc.sps[0].data, sps2 + 4, sizeof(sps2) - 4) && 0 == memcmp(avc.sps[1].data, sps1 + 4, sizeof(sps1) - 4) && 1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps1) - 4 && 0 == memcmp(avc.pps[0].data, pps1 + 4, sizeof(pps1) - 4));
++
++	h264_annexbtomp4(&avc, pps2, sizeof(pps2), buffer, sizeof(buffer), &vcl, &update);
++	assert(0 == vcl && 1 == update && 2 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps2) - 4 && avc.sps[1].bytes == sizeof(sps1) - 4 && 0 == memcmp(avc.sps[0].data, sps2 + 4, sizeof(sps2) - 4) && 0 == memcmp(avc.sps[1].data, sps1 + 4, sizeof(sps1) - 4) && 1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps2) - 4 && 0 == memcmp(avc.pps[0].data, pps2 + 4, sizeof(pps2) - 4));
++}
++
++void mpeg4_annexbtomp4_test(void)
++{
++	const uint8_t sps[] = { 0x67,0x42,0xe0,0x1e,0xab };
++	const uint8_t pps[] = { 0x28,0xce,0x3c,0x80 };
++	const uint8_t annexb[] = { 0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab, 0x00,0x00,0x00,0x01,0x28,0xce,0x3c,0x80,0x00,0x00,0x00,0x01,0x65,0x11 };
++	uint8_t output[256];
++	int vcl, update;
++
++	struct mpeg4_avc_t avc;
++	memset(&avc, 0, sizeof(avc));
++	assert(h264_annexbtomp4(&avc, annexb, sizeof(annexb), output, sizeof(output), &vcl, &update) > 0);
++	assert(1 == avc.nb_sps && avc.sps[0].bytes == sizeof(sps) && 0 == memcmp(avc.sps[0].data, sps, sizeof(sps)));
++	assert(1 == avc.nb_pps && avc.pps[0].bytes == sizeof(pps) && 0 == memcmp(avc.pps[0].data, pps, sizeof(pps)));
++	assert(vcl == 1);
++
++	mpeg4_annexbtomp4_test2();
++	mpeg4_h264_bitstream_format_test();
++}
++#endif
+diff --git a/middleware/src/mp4_format/src/libflv/source/mpeg4-avc.c b/middleware/src/mp4_format/src/libflv/source/mpeg4-avc.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..99e9f98b20c49816998f90ba4d383ea01f16f160
+--- /dev/null
++++ b/middleware/src/mp4_format/src/libflv/source/mpeg4-avc.c
+@@ -0,0 +1,282 @@
++#include "mpeg4-avc.h"
++#include <errno.h>
++#include <limits.h>
++#include <stdio.h>
++#include <string.h>
++#include <assert.h>
++
++/*
++ISO/IEC 14496-15:2010(E) 5.2.4.1.1 Syntax (p16)
++
++aligned(8) class AVCDecoderConfigurationRecord {
++	unsigned int(8) configurationVersion = 1;
++	unsigned int(8) AVCProfileIndication;
++	unsigned int(8) profile_compatibility;
++	unsigned int(8) AVCLevelIndication;
++	bit(6) reserved = '111111'b;
++	unsigned int(2) lengthSizeMinusOne;
++	bit(3) reserved = '111'b;
++
++	unsigned int(5) numOfSequenceParameterSets;
++	for (i=0; i< numOfSequenceParameterSets; i++) {
++		unsigned int(16) sequenceParameterSetLength ;
++		bit(8*sequenceParameterSetLength) sequenceParameterSetNALUnit;
++	}
++
++	unsigned int(8) numOfPictureParameterSets;
++	for (i=0; i< numOfPictureParameterSets; i++) {
++		unsigned int(16) pictureParameterSetLength;
++		bit(8*pictureParameterSetLength) pictureParameterSetNALUnit;
++	}
++
++	if( profile_idc == 100 || profile_idc == 110 ||
++		profile_idc == 122 || profile_idc == 144 )
++	{
++		bit(6) reserved = '111111'b;
++		unsigned int(2) chroma_format;
++		bit(5) reserved = '11111'b;
++		unsigned int(3) bit_depth_luma_minus8;
++		bit(5) reserved = '11111'b;
++		unsigned int(3) bit_depth_chroma_minus8;
++		unsigned int(8) numOfSequenceParameterSetExt;
++		for (i=0; i< numOfSequenceParameterSetExt; i++) {
++			unsigned int(16) sequenceParameterSetExtLength;
++			bit(8*sequenceParameterSetExtLength) sequenceParameterSetExtNALUnit;
++		}
++	}
++}
++*/
++static int _mpeg4_avc_decoder_configuration_record_load(const uint8_t* data, size_t bytes, struct mpeg4_avc_t* avc)
++{
++    uint8_t i;
++	uint32_t j;
++	uint16_t len;
++    uint8_t *p, *end;
++
++	if (bytes < 7) return -1;
++	assert(1 == data[0]);
++//	avc->version = data[0];
++	avc->profile = data[1];
++	avc->compatibility = data[2];
++	avc->level = data[3];
++	avc->nalu = (data[4] & 0x03) + 1;
++	avc->nb_sps = data[5] & 0x1F;
++	if (avc->nb_sps > sizeof(avc->sps) / sizeof(avc->sps[0]))
++	{
++		assert(0);
++		return -1; // sps <= 32
++	}
++
++	j = 6;
++    p = avc->data;
++    end = avc->data + sizeof(avc->data);
++	for (i = 0; i < avc->nb_sps && j + 2 < bytes; ++i)
++	{
++		len = (data[j] << 8) | data[j + 1];
++		if (j + 2 + len >= bytes || p + len > end)
++		{
++			assert(0);
++			return -1;
++		}
++
++		memcpy(p, data + j + 2, len);
++        avc->sps[i].data = p;
++		avc->sps[i].bytes = len;
++		j += len + 2;
++        p += len;
++	}
++
++	/* data[j] is uint8_t and the PPS table has all 256 possible slots. */
++	if (j >= bytes)
++	{
++		assert(0);
++		return -1;
++	}
++
++	avc->nb_pps = data[j++];
++	for (i = 0; i < avc->nb_pps && j + 2 < bytes; i++)
++	{
++		len = (data[j] << 8) | data[j + 1];
++        if (j + 2 + len > bytes || p + len > end)
++        {
++            assert(0);
++            return -1;
++        }
++
++		memcpy(p, data + j + 2, len);
++        avc->pps[i].data = p;
++		avc->pps[i].bytes = len;
++		j += len + 2;
++        p += len;
++	}
++
++	avc->off = (int)(p - avc->data);
++	return j;
++}
++
++int mpeg4_avc_decoder_configuration_record_save(const struct mpeg4_avc_t* avc, uint8_t* data, size_t bytes)
++{
++	uint8_t i;
++	uint8_t *p = data;
++
++	assert(0 < avc->nalu && avc->nalu <= 4);
++	if (bytes < 7 || avc->nb_sps > 32) return -1;
++	bytes -= 7;
++
++	// AVCDecoderConfigurationRecord
++	// ISO/IEC 14496-15:2010
++	// 5.2.4.1.1 Syntax
++	p[0] = 1; // configurationVersion
++	p[1] = avc->profile; // AVCProfileIndication
++	p[2] = avc->compatibility; // profile_compatibility
++	p[3] = avc->level; // AVCLevelIndication
++	p[4] = 0xFC | (avc->nalu - 1); // lengthSizeMinusOne: 3
++	p += 5;
++
++	// sps
++	*p++ = 0xE0 | avc->nb_sps;
++	for (i = 0; i < avc->nb_sps && bytes >= (size_t)avc->sps[i].bytes + 2; i++)
++	{
++		*p++ = (avc->sps[i].bytes >> 8) & 0xFF;
++		*p++ = avc->sps[i].bytes & 0xFF;
++		memcpy(p, avc->sps[i].data, avc->sps[i].bytes);
++
++		p += avc->sps[i].bytes;
++		bytes -= avc->sps[i].bytes + 2;
++	}
++	if (i < avc->nb_sps) return -1; // check length
++
++	// pps
++	*p++ = avc->nb_pps;
++	for (i = 0; i < avc->nb_pps && bytes >= (size_t)avc->pps[i].bytes + 2; i++)
++	{
++		*p++ = (avc->pps[i].bytes >> 8) & 0xFF;
++		*p++ = avc->pps[i].bytes & 0xFF;
++		memcpy(p, avc->pps[i].data, avc->pps[i].bytes);
++
++		p += avc->pps[i].bytes;
++		bytes -= avc->pps[i].bytes + 2;
++	}
++	if (i < avc->nb_pps) return -1; // check length
++
++	if (bytes >= 4)
++	{
++		if (avc->profile == 100 || avc->profile == 110 ||
++			avc->profile == 122 || avc->profile == 244 || avc->profile == 44 ||
++			avc->profile == 83 || avc->profile == 86 || avc->profile == 118 ||
++			avc->profile == 128 || avc->profile == 138 || avc->profile == 139 ||
++			avc->profile == 134)
++		{
++			*p++ = 0xFC | avc->chroma_format_idc;
++			*p++ = 0xF8 | avc->bit_depth_luma_minus8;
++			*p++ = 0xF8 | avc->bit_depth_chroma_minus8;
++			*p++ = 0; // numOfSequenceParameterSetExt
++		}
++	}
++
++	return (int)(p - data);
++}
++
++#define H264_STARTCODE(p) (p[0]==0 && p[1]==0 && (p[2]==1 || (p[2]==0 && p[3]==1)))
++
++int mpeg4_avc_from_nalu(const uint8_t* data, size_t bytes, struct mpeg4_avc_t* avc)
++{
++	int r;
++	r = h264_annexbtomp4(avc, data, bytes, NULL, 0, NULL, NULL);
++	if (avc->nb_sps > 0 && avc->nb_pps > 0)
++		return bytes <= INT_MAX ? (int)bytes : -E2BIG;
++	return r;
++}
++
++int mpeg4_avc_to_nalu(const struct mpeg4_avc_t* avc, uint8_t* data, size_t bytes)
++{
++	uint8_t i;
++	size_t k = 0;
++	uint8_t* h264 = data;
++
++	// sps
++	for (i = 0; i < avc->nb_sps && bytes >= k + avc->sps[i].bytes + 4; i++)
++	{
++		if (avc->sps[i].bytes < 4 || !H264_STARTCODE(avc->sps[i].data))
++		{
++			h264[k++] = 0;
++			h264[k++] = 0;
++			h264[k++] = 0;
++			h264[k++] = 1;
++		}
++		memcpy(h264 + k, avc->sps[i].data, avc->sps[i].bytes);
++
++		k += avc->sps[i].bytes;
++	}
++	if (i < avc->nb_sps) return -1; // check length
++
++	// pps
++	for (i = 0; i < avc->nb_pps && bytes >= k + avc->pps[i].bytes + 2; i++)
++	{
++		if (avc->pps[i].bytes < 4 || !H264_STARTCODE(avc->pps[i].data))
++		{
++			h264[k++] = 0;
++			h264[k++] = 0;
++			h264[k++] = 0;
++			h264[k++] = 1;
++		}
++		memcpy(h264 + k, avc->pps[i].data, avc->pps[i].bytes);
++
++		k += avc->pps[i].bytes;
++	}
++	if (i < avc->nb_pps) return -1; // check length
++
++	assert(k < 0x7FFF);
++	return (int)k;
++}
++
++int mpeg4_avc_codecs(const struct mpeg4_avc_t* avc, char* codecs, size_t bytes)
++{
++	// https://tools.ietf.org/html/rfc6381#section-3.3
++	// https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter
++    return snprintf(codecs, bytes, "avc1.%02x%02x%02x", avc->profile, avc->compatibility, avc->level);
++}
++
++int mpeg4_avc_decoder_configuration_record_load(const uint8_t* data, size_t bytes, struct mpeg4_avc_t* avc)
++{
++	int r;
++	r = _mpeg4_avc_decoder_configuration_record_load(data, bytes, avc);
++	if (r > 0 && avc->nb_sps > 0 && avc->nb_pps > 0)
++		return r;
++
++	// try annexb
++	memset(avc, 0, sizeof(*avc));
++	return mpeg4_avc_from_nalu(data, bytes, avc);
++}
++
++#if defined(_DEBUG) || defined(DEBUG)
++void mpeg4_annexbtomp4_test(void);
++void mpeg4_avc_test(void)
++{
++	const unsigned char src[] = {
++		0x01,0x42,0xe0,0x1e,0xff,0xe1,0x00,0x21,0x67,0x42,0xe0,0x1e,0xab,0x40,0xf0,0x28,
++		0xd0,0x80,0x00,0x00,0x00,0x80,0x00,0x00,0x19,0x70,0x20,0x00,0x78,0x00,0x00,0x0f,
++		0x00,0x16,0xb1,0xb0,0x3c,0x50,0xaa,0x80,0x80,0x01,0x00,0x04,0x28,0xce,0x3c,0x80
++	};
++	const unsigned char nalu[] = {
++		0x00,0x00,0x00,0x01,0x67,0x42,0xe0,0x1e,0xab,0x40,0xf0,0x28,0xd0,0x80,0x00,0x00,
++		0x00,0x80,0x00,0x00,0x19,0x70,0x20,0x00,0x78,0x00,0x00,0x0f,0x00,0x16,0xb1,0xb0,
++		0x3c,0x50,0xaa,0x80,0x80,0x00,0x00,0x00,0x01,0x28,0xce,0x3c,0x80
++	};
++	unsigned char data[sizeof(src)];
++
++	struct mpeg4_avc_t avc;
++	assert(sizeof(src) == mpeg4_avc_decoder_configuration_record_load(src, sizeof(src), &avc));
++	assert(0x42 == avc.profile && 0xe0 == avc.compatibility && 0x1e == avc.level);
++	assert(4 == avc.nalu && 1 == avc.nb_sps && 1 == avc.nb_pps);
++	assert(sizeof(src) == mpeg4_avc_decoder_configuration_record_save(&avc, data, sizeof(data)));
++	assert(0 == memcmp(src, data, sizeof(src)));
++    mpeg4_avc_codecs(&avc, (char*)data, sizeof(data));
++    assert(0 == memcmp("avc1.42e01e", data, 11));
++
++	assert(sizeof(nalu) == mpeg4_avc_to_nalu(&avc, data, sizeof(data)));
++	assert(0 == memcmp(nalu, data, sizeof(nalu)));
++
++	mpeg4_annexbtomp4_test();
++}
++#endif

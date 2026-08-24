@@ -1,0 +1,71 @@
+From e2fb59931b0758866dcb0aeb5886fad20a14f247 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:38:16 -0400
+Subject: [PATCH 1/2] feat(atag): publish selected OTA slot
+
+---
+ board/kendryte/common/k230_atag.c |  8 ++++++++
+ board/kendryte/common/k230_atag.h | 10 ++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/board/kendryte/common/k230_atag.c b/board/kendryte/common/k230_atag.c
+index 8be537d63edc57af44cc75af0056899c644a3506..816d1a4ee05a4c26d22fd0c7699c74edd7687e97 100644
+--- a/board/kendryte/common/k230_atag.c
++++ b/board/kendryte/common/k230_atag.c
+@@ -68,6 +68,14 @@ void setup_k230_rtapp_tag(uint64_t size, uint64_t load_address)
+ 	params = tag_next(params);
+ }
+ 
++void setup_k230_ota_slot_tag(char slot)
++{
++	params->hdr.tag = ATAG_K230_OTA_SLOT;
++	params->hdr.size = tag_size(tag_k230_ota_slot);
++	params->u.k230_ota_slot.slot = (u32)slot;
++	params = tag_next(params);
++}
++
+ void setup_end_tag(void)
+ {
+ 	struct tag *tag;
+diff --git a/board/kendryte/common/k230_atag.h b/board/kendryte/common/k230_atag.h
+index 245b84eef8e4a92a48b0f1a9a7d993f73d4a6ec7..4d58e99d258493b5b85a9454849daf6a3b063435 100644
+--- a/board/kendryte/common/k230_atag.h
++++ b/board/kendryte/common/k230_atag.h
+@@ -35,6 +35,7 @@
+ /* K230-specific ATAG extensions */
+ #define ATAG_K230_DDR_SIZE	0x54410002	/* K230 DDR size information */
+ #define ATAG_K230_RTAPP		0x54410003	/* K230 RTAPP preload information */
++#define ATAG_K230_OTA_SLOT	0x54410004	/* Selected OTA A/B slot */
+ 
+ struct tag_core {
+     u32 flags;
+@@ -50,6 +51,13 @@ struct tag_k230_rtapp {
+ 	u64 load_address;	/* RTAPP load address */
+ };
+ 
++struct tag_k230_ota_slot {
++	u32 slot;		/* ASCII 'A' or 'B' */
++};
++
++_Static_assert(sizeof(struct tag_k230_ota_slot) == sizeof(u32),
++	       "K230 OTA slot ATAG ABI changed");
++
+ /* ATAG tag header */
+ struct tag_header {
+ 	u32 size;
+@@ -63,6 +71,7 @@ struct tag {
+         struct tag_core             core;
+ 		struct tag_k230_ddr_size	k230_ddr;
+ 		struct tag_k230_rtapp		k230_rtapp;
++		struct tag_k230_ota_slot	k230_ota_slot;
+ 	} u;
+ };
+ 
+@@ -78,6 +87,7 @@ struct tag {
+ void setup_start_tag(void);
+ void setup_k230_ddr_size_tag(uint64_t ddr_size);
+ void setup_k230_rtapp_tag(uint64_t size, uint64_t load_address);
++void setup_k230_ota_slot_tag(char slot);
+ void setup_end_tag(void);
+ 
+ #endif /* __K230_ATAG_H__ */

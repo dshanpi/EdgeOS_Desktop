@@ -86,7 +86,8 @@ This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase,
 │   └── ota_*                  HTTPS, manifest verification, and A/B OTA
 ├── uart/                      UART Lab, VAXP, and AI data streaming
 ├── third_party/vaxp/          Bundled VAXP 1.0 protocol headers
-├── tools/                     CanMV SDK integration script
+├── tools/                     SDK patch, compatibility-check, and app-integration scripts
+├── sdk/                       Reproducible, version-locked SDK patch set and manifests
 ├── skill/                     DshanPI EdgeOS UI design Skill
 ├── Kconfig
 └── Makefile
@@ -139,17 +140,22 @@ cd /path/to/canmv_k230/src/applications
 git clone https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 git lfs pull
+./tools/apply_sdk_patches.sh --check
+./tools/apply_sdk_patches.sh --apply
 ./tools/integrate_canmv_sdk.sh
 cd ../../..
-make k230_canmv_dongshanpi_defconfig
-make menuconfig
+make k230_canmv_dongshanpi_edgeos_defconfig
+./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
-Enable `DshanPI EdgeOS Desktop` under `Applications Configuration`. The SDK discovers the menu entry automatically from this repository's Kconfig; the integration script idempotently updates the parent `apps.mk` according to the checkout directory name and maps the option to the actual build directory. Menu discovery and build registration are separate, so run the script again in a new SDK checkout or after resetting `apps.mk`.
+The dedicated `k230_canmv_dongshanpi_edgeos_defconfig` enables `DshanPI EdgeOS Desktop` automatically, so no manual configuration is required. Run `make menuconfig` separately only when you want to inspect or adjust features; the application will appear under `Applications Configuration`. The SDK discovers the menu entry from this repository's Kconfig, while the integration script idempotently updates the parent `apps.mk` according to the checkout directory name and maps the option to the actual build directory. Menu discovery and build registration are separate, so run the integration script again in a new SDK checkout or after resetting `apps.mk`.
 
 The repository must be a direct child of `src/applications/`, but its directory name may be changed. The installed launcher remains `/sdcard/app/dshanpi_aimodel` regardless of the source directory name, preserving the OTA and sub-application return paths.
 
-> **SDK compatibility:** The integration script only updates `apps.mk` build registration; it does not install SDK API patches. A matching DshanPI EdgeOS SDK must at least install the player's `kplayer.h` and `libmp4_player.a` (including `kd_player_seek()`), and provide the touch-click filtering, A/B OTA status, media-mirroring, and system-version interfaces. The stock upstream CanMV K230 SDK does not provide all of these extensions, and this repository does not currently include that SDK patch set. On an unpatched SDK, the EdgeOS application build will commonly stop first at `fatal error: kplayer.h: No such file or directory`, followed by possible missing-interface errors such as `lv_k230_touch_accept_click()` and `k230_ota_get_status()`.
+> **SDK compatibility:** This repository's [`sdk/`](sdk/) directory contains the reproducible Scheme A patch set, including the player, touch-click filtering, A/B OTA, media mirroring, system version, and dedicated product-configuration extensions. The patches are strictly locked to the official upstream revisions recorded in [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml); they are not intended for arbitrary SDK revisions. `--check` validates revisions, worktrees, and patch integrity without modifying source, and `--apply` applies the mutually dependent set only after every preflight check succeeds. Do not cherry-pick only part of the set or force it onto a revision mismatch. See [`sdk/README.md`](sdk/README.md) for the patch inventory, pinned revisions, checksums, recovery procedure, and troubleshooting.
+
+EdgeOS Desktop does not depend on WebRTC. The dedicated defconfig disables it so the product does not pull in unrelated dependencies; features such as Mbed TLS for OTA remain enabled.
 
 Sub-application build scripts look for the toolchain under `$HOME/.kendryte/k230_toolchains/` by default. If the toolchain is installed elsewhere, point `K230_TOOLCHAIN_BIN` at its `bin` directory:
 
@@ -159,11 +165,11 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 
 ## Building firmware
 
-After completing the defconfig and menuconfig steps above and enabling EdgeOS Desktop, build from the SDK root:
+After applying the SDK patches, integrating the application, selecting the dedicated defconfig, and passing the compatibility check above, build from the SDK root (skip this if you already ran the final command in the previous block):
 
 ```bash
 cd /path/to/canmv_k230
-bash -o pipefail -c 'time make 2>&1 | tee log.txt'
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
 Some SDK versions implement `make log` internally as `make | tee` without enabling `pipefail`, so the command can return zero even when the inner build fails. The command above both records the log and propagates the failure status correctly. If the firmware build fails before reaching EdgeOS, run `make app` to diagnose the application path separately; `[BUILD] applications EdgeOS_Desktop` in the log confirms that the build has entered this repository.
@@ -171,19 +177,19 @@ Some SDK versions implement `make log` internally as `make | tee` without enabli
 A successful build ends with:
 
 ```text
-Build K230 done, board k230_canmv_dongshanpi, config k230_canmv_dongshanpi_defconfig
+Build K230 done, board k230_canmv_dongshanpi, config k230_canmv_dongshanpi_edgeos_defconfig
 ```
 
 Typical artifacts are written to:
 
 ```text
-output/k230_canmv_dongshanpi_defconfig/
-├── DshanPI_CanMV_V3_<system-version>.img
-├── DshanPI_CanMV_V3_<system-version>_ota.kdimg
+output/k230_canmv_dongshanpi_edgeos_defconfig/
+├── DshanPI_EdgeOS_Desktop_v0.7.5.img
+├── DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg
 └── ...matching .gz and digest files
 ```
 
-The system version is maintained by the SDK board file `boards/k230_canmv_dongshanpi/system-version.txt`. Do not maintain another version string in the UI or packaging scripts.
+The current product version is `v0.7.5`. It is maintained centrally in the SDK board file `boards/k230_canmv_dongshanpi/system-version.txt`; do not maintain another version string in the UI or packaging scripts.
 
 ### Building the application only
 
@@ -265,3 +271,5 @@ The complete design philosophy, component rules, and review checklist are availa
 Original code at the repository root is released under the [MIT License](LICENSE).
 
 Files under `apps/ai_demo/`, models, fonts, images, audio, prebuilt libraries, and material imported from the CanMV K230 SDK or other upstream projects may remain subject to their own licences, model terms, or redistribution restrictions. Publishers and contributors must preserve upstream notices and confirm redistribution rights before commercial distribution or rehosting large assets. The root MIT License does not replace the original terms of third-party materials.
+
+Patches under `sdk/` retain the original copyright and license terms of the upstream projects and source files they modify. The repository-root MIT License does not relicense those upstream patches.

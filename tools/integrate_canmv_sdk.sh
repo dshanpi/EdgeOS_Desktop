@@ -35,7 +35,10 @@ cleanup()
 {
     rm -f -- "$TMP_FILE"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 awk -v mapping="$MAPPING" '
     BEGIN { registered = 0 }
@@ -63,5 +66,6 @@ fi
 
 cleanup
 trap - EXIT HUP INT TERM
-printf 'Next: cd %s && make <board>_defconfig && make menuconfig\n' "$SDK_ROOT"
-printf 'Then enable "DshanPI EdgeOS Desktop" under Applications Configuration.\n'
+printf 'Next: cd %s && make k230_canmv_dongshanpi_edgeos_defconfig\n' "$SDK_ROOT"
+printf 'The product defconfig enables "DshanPI EdgeOS Desktop" automatically.\n'
+printf 'Use make menuconfig only when you need to inspect or customize it.\n'

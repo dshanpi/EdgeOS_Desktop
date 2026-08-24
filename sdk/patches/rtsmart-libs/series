@@ -1,0 +1,5 @@
+0001-feat-lvgl-add-filtered-touch-gesture-API.patch
+0002-feat-ota-expose-boot-status-and-confirmation-API.patch
+0003-feat-pmu-expose-reboot-control-APIs.patch
+0004-feat-kconfig-allow-product-LVGL-with-CanMV.patch
+0005-feat-lvgl-enable-EdgeOS-fonts-and-JPEG-decoder.patch

@@ -1,0 +1,62 @@
+{
+  "format_version": 1,
+  "patch_set": "edgeos-sdk-v1.0.0",
+  "generated_on": "2026-08-24",
+  "upstream_manifest_revision": "d207027db3ae457cd43629c80b8a42e3b79fd51a",
+  "projects": [
+    {
+      "id": "sdk-root",
+      "name": "kendryte/k230_rtos_sdk",
+      "path": ".",
+      "base_revision": "3f18247b48635f83f439bc13e564ce90d8655d18",
+      "patched_revision": "e01e4b196b4854bd11ceda5f5d079fcdd4777a0c",
+      "patched_tree": "b0c1746a880487bd60e7e98484bba70d55a51a54",
+      "series": "sdk/patches/sdk-root/series"
+    },
+    {
+      "id": "rtsmart-libs",
+      "name": "canmv-k230/k230_rtsmart_lib",
+      "path": "src/rtsmart/libs",
+      "base_revision": "4964b24f020825216a3095ba7ba998ae6e76bce7",
+      "patched_revision": "4ff5f08e522f6e9d23b9bd89be02ce4fdbc2fe10",
+      "patched_tree": "a6d9fe7bd1b70a67570487aa905559680a92233e",
+      "series": "sdk/patches/rtsmart-libs/series"
+    },
+    {
+      "id": "lvgl",
+      "name": "lvgl/lvgl",
+      "path": "src/rtsmart/libs/3rd-party/lvgl/lvgl",
+      "base_revision": "c210a4efa2f474d0223d3e91c79963e1ae4ac0bc",
+      "patched_revision": "2f1515d279b67dff5259c30fd2f0eda87041d21d",
+      "patched_tree": "3d118fd0f624e11bf8e0cea88b099e0b58db1966",
+      "series": "sdk/patches/lvgl/series"
+    },
+    {
+      "id": "mpp",
+      "name": "canmv-k230/mpp",
+      "path": "src/rtsmart/mpp",
+      "base_revision": "631ca8660b3139982a37a9e1dd5b3f9f7b8af0ad",
+      "patched_revision": "ca14981254209b0cfdc0d0b78270f98e2d8a3028",
+      "patched_tree": "2353278396c7984a3d179524389a7cb2bd444b86",
+      "series": "sdk/patches/mpp/series"
+    },
+    {
+      "id": "rtsmart",
+      "name": "canmv-k230/rtsmart",
+      "path": "src/rtsmart/rtsmart",
+      "base_revision": "650f165630753c29cf85f8e64ebf75196d7a5726",
+      "patched_revision": "132d4ad112ccd9ac1fef0312da83f6b2847a6e08",
+      "patched_tree": "cb6b4670f4bd6748d07ddfbae79e1e6df7ef5a10",
+      "series": "sdk/patches/rtsmart/series"
+    },
+    {
+      "id": "u-boot",
+      "name": "canmv-k230/u-boot",
+      "path": "src/uboot/uboot",
+      "base_revision": "56a131d12108009012eca0204e7dd610a3e7d618",
+      "patched_revision": "e02667f8992cfcbaf421b131d0c44b563f3463c9",
+      "patched_tree": "305aedce2f17e13e3804c8da798c8ab3539adaa0",
+      "series": "sdk/patches/u-boot/series"
+    }
+  ]
+}

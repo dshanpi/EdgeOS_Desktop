@@ -1,0 +1,79 @@
+From da0b0982f20403e35c8877b11a09f564e94b65f7 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:05:17 -0400
+Subject: [PATCH 1/2] build: support product OTA layouts and versions
+
+---
+ boards/Kconfig         |  4 ++++
+ tools/gen_image.sh     | 15 ++++++++++++++-
+ tools/gen_verinfo_h.sh | 11 +++++++++++
+ 3 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/boards/Kconfig b/boards/Kconfig
+index d008cd1a40de0b3025af3ecfaea0dca24688cf5b..77a1d50f9c58519dbafed2b02bd724d2f4e2ac03 100644
+--- a/boards/Kconfig
++++ b/boards/Kconfig
+@@ -160,6 +160,10 @@ menu "Board Configuration"
+         string "Board specified generate image configure file"
+         default "genimage-sdcard.cfg"
+ 
++    config BOARD_GEN_OTA_IMAGE_CFG_FILE
++        string "Board specified OTA image configure file"
++        default "genimage-sdcard-ota.cfg"
++
+     menu "Memory Layout"
+         config AUTO_DETECT_DDR_SIZE
+             bool "Auto Detect DRAM Size"
+diff --git a/tools/gen_image.sh b/tools/gen_image.sh
+index 8dbd1439aa3f9b9562a0af6b35e3c52a1d21ac64..b652577ef8242537b2058e675c23355073505d5f 100755
+--- a/tools/gen_image.sh
++++ b/tools/gen_image.sh
+@@ -199,5 +199,18 @@ else
+     fi
+ fi
+ 
+-gen_ota_image "${SDK_BOARD_DIR}/genimage-sdcard-ota.cfg" "${image_name}_ota"
++# Product boards may provide a user-facing semantic version. Keep release
++# artifact names and the version embedded in sdk_version.h on one source.
++system_version_file="${SDK_BOARD_DIR}/system-version.txt"
++if [ -f "${system_version_file}" ]; then
++    system_version=$(head -n 1 "${system_version_file}" | tr -d '\r\n')
++    if [[ ! "${system_version}" =~ ^v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$ ]]; then
++        echo "Invalid system version '${system_version}' in ${system_version_file}" >&2
++        exit 1
++    fi
++    image_name="${MK_IMAGE_NAME}_${system_version}"
++    echo "Product firmware image name '${image_name}'"
++fi
++
++gen_ota_image "${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_OTA_IMAGE_CFG_FILE}" "${image_name}_ota"
+ gen_image ${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_IMAGE_CFG_FILE} $image_name;
+diff --git a/tools/gen_verinfo_h.sh b/tools/gen_verinfo_h.sh
+index 48d0dd729e834f9c8805b846eb862c09d5738ac4..1e7fecc42f94b372394e72f6e29744f8bcdd0686 100755
+--- a/tools/gen_verinfo_h.sh
++++ b/tools/gen_verinfo_h.sh
+@@ -38,6 +38,16 @@ gen_version_file()
+     local nncase_version=$(parse_nncase_version)
+     local sdk_ver="unknown"
+     local canmv_ver="unknown"
++    local system_ver="unknown"
++    local system_version_file="${SDK_SRC_ROOT_DIR}/boards/${CONFIG_BOARD}/system-version.txt"
++
++    if [ -f "${system_version_file}" ]; then
++        system_ver=$(head -n 1 "${system_version_file}" | tr -d '\r\n')
++        if [[ ! "${system_ver}" =~ ^v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$ ]]; then
++            echo "Invalid system version '${system_ver}' in ${system_version_file}" >&2
++            exit 1
++        fi
++    fi
+ 
+     pushd "${SDK_SRC_ROOT_DIR}" > /dev/null
+         local commitid="unknown"
+@@ -59,6 +69,7 @@ gen_version_file()
+         popd > /dev/null
+     fi
+     echo -e "#ifndef __VER___INFO___H__\n#define __VER___INFO___H__\n" >${version_file}
++    echo "#define SYSTEM_VERSION_  \"${system_ver}\"" >> ${version_file}
+     echo "#define SDK_VERSION_  \"${sdk_ver}\"" >> ${version_file}
+     echo "#define NNCASE_VERSION_ \"${nncase_version}\"" >> ${version_file}
+     [ "$CONFIG_SDK_ENABLE_CANMV" = "y" ] && echo "#define CANMV_VERSION_ \"${canmv_ver}\"" >> ${version_file}

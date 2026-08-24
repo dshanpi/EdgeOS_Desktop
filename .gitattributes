@@ -22,3 +22,7 @@
 *.sh     text eol=lf
 Makefile text eol=lf
 *.md     text eol=lf
+
+# Mail-formatted patches contain leading diff context markers that are not
+# source whitespace. Keep `git diff --check` focused on the files they carry.
+sdk/patches/** -whitespace

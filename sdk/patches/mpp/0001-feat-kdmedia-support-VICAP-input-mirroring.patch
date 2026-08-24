@@ -1,0 +1,60 @@
+From 577f8f9f19cf15277a48165d07bfd8a9caa75532 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:02:47 -0400
+Subject: [PATCH 1/3] feat(kdmedia): support VICAP input mirroring
+
+---
+ middleware/src/kdmedia/include/media.h | 1 +
+ middleware/src/kdmedia/media.cpp       | 8 +++++---
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/middleware/src/kdmedia/include/media.h b/middleware/src/kdmedia/include/media.h
+index 7537af68848037aa1d2bb0eb5df84617a1ab0149..729597011afadadcfa03e643e767b0c7f64c6429 100644
+--- a/middleware/src/kdmedia/include/media.h
++++ b/middleware/src/kdmedia/include/media.h
+@@ -17,6 +17,7 @@ enum class KdMediaVideoType {
+ struct KdMediaInputConfig {
+     bool video_valid = true;
+     k_vicap_sensor_type sensor_type = SENSOR_TYPE_MAX;
++    k_vicap_mirror mirror = VICAP_MIRROR_NONE;
+     int sensor_num = 1;
+     KdMediaVideoType video_type = KdMediaVideoType::kVideoTypeH265;
+     int venc_width = 1280;
+diff --git a/middleware/src/kdmedia/media.cpp b/middleware/src/kdmedia/media.cpp
+index e9f65df907036e9848fa22400235c80d01468a16..683549335b159be68e2e2dd56d4594921992cba2 100644
+--- a/middleware/src/kdmedia/media.cpp
++++ b/middleware/src/kdmedia/media.cpp
+@@ -189,7 +189,8 @@ static k_s32 _sys_munmap(k_u64 phys_addr, void *virt_addr, k_u32 size)
+ 
+ static k_vicap_sensor_info sensor_info[VICAP_DEV_ID_MAX];
+ 
+-static k_s32 kd_sample_vicap_set_dev_attr(k_vicap_dev_set_info dev_info)
++static k_s32 kd_sample_vicap_set_dev_attr(k_vicap_dev_set_info dev_info,
++                                          k_vicap_mirror mirror)
+ {
+     k_s32 ret = 0;
+ 
+@@ -239,6 +240,7 @@ static k_s32 kd_sample_vicap_set_dev_attr(k_vicap_dev_set_info dev_info)
+     dev_attr.pipe_ctrl.bits.af_enable = 0;
+     dev_attr.pipe_ctrl.bits.ahdr_enable = 0;
+     dev_attr.cpature_frame = 0;
++    dev_attr.mirror = mirror;
+     memcpy(&dev_attr.sensor_info, &sensor_info[dev_info.vicap_dev], sizeof(k_vicap_sensor_info));
+     ret = kd_mpi_vicap_set_dev_attr(dev_info.vicap_dev, dev_attr);
+     if (ret)
+@@ -324,7 +326,7 @@ int KdMedia::Impl::Init(const KdMediaInputConfig &config)
+             vcap_dev_info_.sensor_type = sensor_info.sensor_type;
+         }
+ 
+-        ret = kd_sample_vicap_set_dev_attr(vcap_dev_info_);
++        ret = kd_sample_vicap_set_dev_attr(vcap_dev_info_, config.mirror);
+         if (ret != K_SUCCESS)
+         {
+             std::cout << "KdMedia::Init() kd_mpi_vicap_set_dev_attr failed, ret = " << ret << std::endl;
+@@ -1718,4 +1720,4 @@ int KdMedia::SendVideoData(const uint8_t *data, size_t size, uint64_t timestamp_
+ void KdMedia::set_vo_connector_type(k_connector_type &connector_type)
+ {
+     set_connector_type(connector_type);
+-}
+\ No newline at end of file
++}

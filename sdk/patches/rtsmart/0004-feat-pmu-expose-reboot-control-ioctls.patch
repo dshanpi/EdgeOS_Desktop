@@ -1,0 +1,65 @@
+From 132d4ad112ccd9ac1fef0312da83f6b2847a6e08 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:22:45 -0400
+Subject: [PATCH 4/4] feat(pmu): expose reboot control ioctls
+
+---
+ kernel/bsp/maix3/drivers/interdrv/pmu/pmu_priv.h   | 14 ++++++++++++++
+ .../bsp/maix3/drivers/interdrv/pmu/pmu_userdev.c   | 12 ++++++++++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_priv.h b/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_priv.h
+index a620b0d5bc77b3c4a9c8b742e500e0b82b22ef96..027bb7e49bbb936fdbb50d2495c14b49d28b3581 100644
+--- a/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_priv.h
++++ b/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_priv.h
+@@ -302,6 +302,20 @@ struct pmu_wakeup_source {
+     _IOWR('P', 0x07, struct pmu_wakeup_pad_level)
+ #define PMU_IOCTL_GET_WAKEUP_SOURCE \
+     _IOR('P', 0x08, struct pmu_wakeup_source)
++#define PMU_IOCTL_REBOOT_NR                   0x09U
++#define PMU_IOCTL_REBOOT_TO_UPGRADE_NR        0x0aU
++#define PMU_IOCTL_REBOOT \
++    _IO('P', PMU_IOCTL_REBOOT_NR)
++#define PMU_IOCTL_REBOOT_TO_UPGRADE \
++    _IO('P', PMU_IOCTL_REBOOT_TO_UPGRADE_NR)
++
++_Static_assert(PMU_IOCTL_REBOOT == _IO('P', 0x09),
++               "PMU reboot ioctl ABI changed");
++_Static_assert(PMU_IOCTL_REBOOT_TO_UPGRADE == _IO('P', 0x0a),
++               "PMU upgrade reboot ioctl ABI changed");
++_Static_assert(PMU_IOCTL_REBOOT != PMU_IOCTL_SHUTDOWN_NOW &&
++               PMU_IOCTL_REBOOT_TO_UPGRADE != PMU_IOCTL_SHUTDOWN_NOW,
++               "PMU reboot ioctls collide with shutdown ABI");
+ 
+ struct pmu_worker_state {
+     rt_thread_t thread;
+diff --git a/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_userdev.c b/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_userdev.c
+index 1104a630ec032f3f0e9f1f0044974873d77b7bb7..89fd22e0d3b5b1779c3a1aad74eb4c2d3012a57e 100644
+--- a/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_userdev.c
++++ b/kernel/bsp/maix3/drivers/interdrv/pmu/pmu_userdev.c
+@@ -2,6 +2,8 @@
+ 
+ #include "pmu_priv.h"
+ 
++extern void reboot_to_upgrade(void);
++
+ #ifdef RT_USING_DFS
+ #include <dfs_file.h>
+ #endif
+@@ -279,6 +281,16 @@ static int pmu_userdev_ioctl(struct dfs_fd *file, int cmd, void *args)
+         ret = RT_EOK;
+         goto out;
+ 
++    case PMU_IOCTL_REBOOT:
++        rt_hw_cpu_reset();
++        ret = RT_EOK;
++        goto out;
++
++    case PMU_IOCTL_REBOOT_TO_UPGRADE:
++        reboot_to_upgrade();
++        ret = RT_EOK;
++        goto out;
++
+     case PMU_IOCTL_GET_WAKEUP_PAD_LEVEL:
+         if (args == RT_NULL)
+             goto out;

@@ -1,0 +1,57 @@
+From 4ff5f08e522f6e9d23b9bd89be02ce4fdbc2fe10 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:20:14 -0400
+Subject: [PATCH 5/5] feat(lvgl): enable EdgeOS fonts and JPEG decoder
+
+---
+ 3rd-party/lvgl/port/lv_conf.h | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/3rd-party/lvgl/port/lv_conf.h b/3rd-party/lvgl/port/lv_conf.h
+index f02502150254e31997d7acf5fca779c21ec9e6a1..c760f7bb491e95499e122594b1122f1e70e13f2c 100644
+--- a/3rd-party/lvgl/port/lv_conf.h
++++ b/3rd-party/lvgl/port/lv_conf.h
+@@ -634,26 +634,26 @@
+ /* Montserrat fonts with ASCII range and some symbols using bpp = 4
+  * https://fonts.google.com/specimen/Montserrat */
+ #define LV_FONT_MONTSERRAT_8  0
+-#define LV_FONT_MONTSERRAT_10 0
+-#define LV_FONT_MONTSERRAT_12 0
++#define LV_FONT_MONTSERRAT_10 1
++#define LV_FONT_MONTSERRAT_12 1
+ #define LV_FONT_MONTSERRAT_14 1
+-#define LV_FONT_MONTSERRAT_16 0
+-#define LV_FONT_MONTSERRAT_18 0
+-#define LV_FONT_MONTSERRAT_20 0
++#define LV_FONT_MONTSERRAT_16 1
++#define LV_FONT_MONTSERRAT_18 1
++#define LV_FONT_MONTSERRAT_20 1
+ #define LV_FONT_MONTSERRAT_22 0
+ #define LV_FONT_MONTSERRAT_24 0
+ #define LV_FONT_MONTSERRAT_26 0
+-#define LV_FONT_MONTSERRAT_28 0
++#define LV_FONT_MONTSERRAT_28 1
+ #define LV_FONT_MONTSERRAT_30 0
+ #define LV_FONT_MONTSERRAT_32 0
+ #define LV_FONT_MONTSERRAT_34 0
+-#define LV_FONT_MONTSERRAT_36 0
++#define LV_FONT_MONTSERRAT_36 1
+ #define LV_FONT_MONTSERRAT_38 0
+ #define LV_FONT_MONTSERRAT_40 0
+ #define LV_FONT_MONTSERRAT_42 0
+ #define LV_FONT_MONTSERRAT_44 0
+ #define LV_FONT_MONTSERRAT_46 0
+-#define LV_FONT_MONTSERRAT_48 0
++#define LV_FONT_MONTSERRAT_48 1
+ 
+ /* Demonstrate special features */
+ #define LV_FONT_MONTSERRAT_28_COMPRESSED    0  /**< bpp = 3 */
+@@ -972,7 +972,7 @@
+ 
+ /** JPG + split JPG decoder library.
+  *  Split JPG is a custom format optimized for embedded systems. */
+-#define LV_USE_TJPGD 0
++#define LV_USE_TJPGD 1
+ 
+ /** libjpeg-turbo decoder library.
+  *  - Supports complete JPEG specifications and high-performance JPEG decoding. */

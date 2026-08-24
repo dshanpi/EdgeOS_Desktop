@@ -1,0 +1,2025 @@
+From c11a9a0e47eec3770dea6fed8d6f1c17a84051ab Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:10:24 -0400
+Subject: [PATCH 2/3] feat(player): restore source MP4 playback with seeking
+
+---
+ middleware/src/Makefile                       |   4 +-
+ middleware/src/mp4_format/Makefile            |   1 +
+ .../src/mp4_format/include/mp4_format.h       |   3 +
+ middleware/src/mp4_format/src/mp4_format.cc   |  50 ++
+ middleware/src/mp4_player/LICENSE             |  23 +
+ middleware/src/mp4_player/Makefile            |  73 ++
+ middleware/src/mp4_player/README.md           |  16 +
+ middleware/src/mp4_player/display_cfg.c       | 165 ++++
+ middleware/src/mp4_player/display_cfg.h       |  50 ++
+ middleware/src/mp4_player/include/kplayer.h   | 145 ++++
+ middleware/src/mp4_player/kplayer.c           | 527 ++++++++++++
+ middleware/src/mp4_player/player_res.c        | 780 ++++++++++++++++++
+ middleware/src/mp4_player/player_res.h        |  57 ++
+ 13 files changed, 1893 insertions(+), 1 deletion(-)
+ create mode 100644 middleware/src/mp4_player/LICENSE
+ create mode 100644 middleware/src/mp4_player/Makefile
+ create mode 100644 middleware/src/mp4_player/README.md
+ create mode 100644 middleware/src/mp4_player/display_cfg.c
+ create mode 100644 middleware/src/mp4_player/display_cfg.h
+ create mode 100644 middleware/src/mp4_player/include/kplayer.h
+ create mode 100644 middleware/src/mp4_player/kplayer.c
+ create mode 100644 middleware/src/mp4_player/player_res.c
+ create mode 100644 middleware/src/mp4_player/player_res.h
+
+diff --git a/middleware/src/Makefile b/middleware/src/Makefile
+index 15649aa6690ee7e8a13a7592000d02387d855f44..47e58381168d6c7f671ce12a944fcf0dccb5637b 100644
+--- a/middleware/src/Makefile
++++ b/middleware/src/Makefile
+@@ -1,6 +1,6 @@
+ include mkenv.mk
+ 
+-subdirs-y := kdmedia live555 mp4_format rtsp_client rtsp_server ogg
++subdirs-y := kdmedia live555 mp4_format mp4_player rtsp_client rtsp_server ogg
+ 
+ subdirs-$(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG)		+= ffmpeg/src
+ subdirs-$(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_RTSP_PUSHER)	+= rtsp_pusher
+@@ -43,6 +43,8 @@ ifeq ($(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG),y)
+ 
+ mp4_format: ffmpeg/src
+ 
++mp4_player: mp4_format
++
+ endif
+ 
+ ifeq ($(CONFIG_MPP_ENABLE_MIDDLEWARE_LIB_RTSP_PUSHER),y)
+diff --git a/middleware/src/mp4_format/Makefile b/middleware/src/mp4_format/Makefile
+index 06bd951f0dcc3e73d1f8403e1d0dacd127858ff0..14062b3cb316a9505b7455a902d501fd5baee1a8 100644
+--- a/middleware/src/mp4_format/Makefile
++++ b/middleware/src/mp4_format/Makefile
+@@ -38,6 +38,7 @@ C_CXX_FLAGS     := -fopenmp -march=rv64imafdcv -mabi=lp64d -mcmodel=medany -Os
+ C_CXX_FLAGS     += -Iinclude -I. -Wall -Wextra -ffunction-sections -fdata-sections
+ C_CXX_FLAGS     += -Wno-multichar -Wno-unused-result -Wno-unused-variable -Wno-format
+ C_CXX_FLAGS     += $(LIB_CFLAGS)
++C_CXX_FLAGS     += $(EXTRA_CFLAGS)
+ 
+ CFLAGS          := $(C_CXX_FLAGS) -std=gnu99
+ CXX_FLAGS       := $(C_CXX_FLAGS) -std=c++20 -Wno-register
+diff --git a/middleware/src/mp4_format/include/mp4_format.h b/middleware/src/mp4_format/include/mp4_format.h
+index c900d738ff63348927ebeb61c0e3da8c1d3d3035..b9a983b04f43fbe12c8054f12c9e4bf25642c93a 100644
+--- a/middleware/src/mp4_format/include/mp4_format.h
++++ b/middleware/src/mp4_format/include/mp4_format.h
+@@ -104,6 +104,9 @@ int kd_mp4_get_track_by_index(KD_HANDLE mp4_handle, uint32_t index, k_mp4_track_
+ 
+ int kd_mp4_get_frame(KD_HANDLE mp4_handle, k_mp4_frame_data_s *frame_data);
+ 
++/* Seek a demuxer to a video key frame at or before timestamp_ms. */
++int kd_mp4_seek(KD_HANDLE mp4_handle, uint64_t *timestamp_ms);
++
+ #ifdef __cplusplus
+ #if __cplusplus
+ }
+diff --git a/middleware/src/mp4_format/src/mp4_format.cc b/middleware/src/mp4_format/src/mp4_format.cc
+index fb38994f769948a2365233b93212a8d6bccd73f5..db7b8d2f9d6dab1c409e3b7b3decd36c433a0fec 100644
+--- a/middleware/src/mp4_format/src/mp4_format.cc
++++ b/middleware/src/mp4_format/src/mp4_format.cc
+@@ -1387,3 +1387,53 @@ int kd_mp4_get_frame(KD_HANDLE mp4_handle, k_mp4_frame_data_s *frame_data)
+     av_packet_free(&pkt);
+     return 0;
+ }
++
++int kd_mp4_seek(KD_HANDLE mp4_handle, uint64_t *timestamp_ms)
++{
++    if (!mp4_handle || !timestamp_ms) return -1;
++
++    Mp4DemuxerCtx *ctx = static_cast<Mp4DemuxerCtx*>(mp4_handle);
++    if (!ctx->format_ctx || !ctx->format_ctx->iformat) return -1;
++
++    uint64_t target_ms = *timestamp_ms;
++    if (ctx->format_ctx->duration != AV_NOPTS_VALUE &&
++        ctx->format_ctx->duration > 0) {
++        const uint64_t duration_ms =
++            static_cast<uint64_t>(ctx->format_ctx->duration) / 1000;
++        if (target_ms > duration_ms) target_ms = duration_ms;
++    }
++
++    int stream_idx = -1;
++    for (const auto &track : ctx->tracks) {
++        if (track.track_type == K_MP4_STREAM_VIDEO) {
++            stream_idx = track.stream_idx;
++            break;
++        }
++    }
++
++    int64_t target;
++    if (stream_idx >= 0) {
++        AVStream *stream = ctx->format_ctx->streams[stream_idx];
++        target = av_rescale_q(static_cast<int64_t>(target_ms),
++                              av_make_q(1, 1000), stream->time_base);
++    } else {
++        target = av_rescale_q(static_cast<int64_t>(target_ms),
++                              av_make_q(1, 1000), AV_TIME_BASE_Q);
++    }
++
++    const int ret = av_seek_frame(ctx->format_ctx, stream_idx, target,
++                                  AVSEEK_FLAG_BACKWARD);
++    if (ret < 0) {
++        std::cerr << "[mp4_format] seek failed: " << ff_error_str(ret)
++                  << std::endl;
++        return -1;
++    }
++
++    avformat_flush(ctx->format_ctx);
++    if (ctx->h264_bsf_ctx) av_bsf_flush(ctx->h264_bsf_ctx);
++    if (ctx->hevc_bsf_ctx) av_bsf_flush(ctx->hevc_bsf_ctx);
++    ctx->frame_buffer.clear();
++    ctx->eof_reached = false;
++    *timestamp_ms = target_ms;
++    return 0;
++}
+diff --git a/middleware/src/mp4_player/LICENSE b/middleware/src/mp4_player/LICENSE
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c6788673590513d6e6b7c1fa2b2214d30dff63f
+--- /dev/null
++++ b/middleware/src/mp4_player/LICENSE
+@@ -0,0 +1,23 @@
++Copyright (c) 2023, Canaan Bright Sight Co., Ltd
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++
++1. Redistributions of source code must retain the above copyright
++notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++notice, this list of conditions and the following disclaimer in the
++documentation and/or other materials provided with the distribution.
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+diff --git a/middleware/src/mp4_player/Makefile b/middleware/src/mp4_player/Makefile
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6f4ece4c533d72f90502e57fcdb28ab4181838c
+--- /dev/null
++++ b/middleware/src/mp4_player/Makefile
+@@ -0,0 +1,73 @@
++include ../mkenv.mk
++include $(SDK_RTSMART_SRC_DIR)/libs/mk/toolchain_riscv64_musl.mk
++
++# 1. Path Definitions
++DIR 	:= $(shell basename `pwd`)
++BUILD	:= $(SDK_RTSMART_BUILD_DIR)/mpp/middleware/$(DIR)
++# Direct target path for the library
++LIB		:= $(MPP_MIDDLEWARE_LIB_INSTALL_PATH)/lib$(DIR).a
++
++include $(SDK_RTSMART_SRC_DIR)/libs/mk/libmpp.mk
++
++# 2. Source and Object Handling
++C_SRCS          := $(wildcard *.c)
++CXX_SRCS        := $(wildcard *.cpp)
++
++C_OBJS          := $(patsubst %.c, $(BUILD)/%.o, $(C_SRCS))
++CXX_OBJS        := $(patsubst %.cpp, $(BUILD)/%.o, $(CXX_SRCS))
++
++OBJS            := $(C_OBJS) $(CXX_OBJS)
++DEPS            := $(OBJS:.o=.d)
++
++# 3. Header Installation Mapping
++INCS            := $(wildcard include/*.h)
++INCS_INSTALL    := $(patsubst include/%, $(MPP_MIDDLEWARE_INC_INSTALL_PATH)/%, $(INCS))
++
++# 4. Directory Creation Logic
++OBJ_DIRS        := $(sort $(dir $(OBJS)) $(MPP_MIDDLEWARE_LIB_INSTALL_PATH) $(MPP_MIDDLEWARE_INC_INSTALL_PATH))
++
++# 5. Compiler Flags
++C_CXX_FLAGS     := -fopenmp -march=rv64imafdcv -mabi=lp64d -mcmodel=medany -Os
++C_CXX_FLAGS     += -Iinclude -I. -Wall -Wextra -ffunction-sections -fdata-sections
++C_CXX_FLAGS     += -Wno-multichar -Wno-unused-result -Wno-unused-variable -Wno-format
++C_CXX_FLAGS     += $(LIB_CFLAGS)
++C_CXX_FLAGS     += $(EXTRA_CFLAGS)
++
++CFLAGS          := $(C_CXX_FLAGS) -std=gnu99
++CXX_FLAGS       := $(C_CXX_FLAGS) -std=c++20 -Wno-register
++
++# --- Targets ---
++
++.PHONY: all clean
++
++# 'all' now ensures the library is built directly into the target and headers are synced
++all: $(LIB) $(INCS_INSTALL)
++	@$(ECHO) [BUILD] mpp middleware $(DIR) done.
++
++
++# Rule to copy headers to the SDK (only if they changed)
++$(MPP_MIDDLEWARE_INC_INSTALL_PATH)/%: include/% | $(MPP_MIDDLEWARE_INC_INSTALL_PATH)
++	@echo "[CP] $<"
++	$(Q)cp -f $< $@
++
++# Rule to archive the library directly into the target folder
++$(LIB): $(OBJS) | $(MPP_MIDDLEWARE_LIB_INSTALL_PATH)
++	@echo "[AR] $@"
++	$(Q)$(AR) rcs $@ $^
++
++# Compilation rules for intermediate objects
++$(BUILD)/%.o : %.c | $(OBJ_DIRS)
++	@echo "[CC] $@"
++	$(Q)$(CC) $(CFLAGS) -MD -MP -MF $(@:.o=.d) -c $< -o $@
++
++$(BUILD)/%.o : %.cpp | $(OBJ_DIRS)
++	@echo "[CXX] $@"
++	$(Q)$(CXX) $(CXX_FLAGS) -MD -MP -MF $(@:.o=.d) -c $< -o $@
++
++$(OBJ_DIRS):
++	$(Q)mkdir -p $@
++
++clean:
++	$(Q)rm -rf $(LIB) $(BUILD)
++
++-include $(DEPS)
+diff --git a/middleware/src/mp4_player/README.md b/middleware/src/mp4_player/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1df94dc4efe59e02faa4a5b2a30b72ecad19568
+--- /dev/null
++++ b/middleware/src/mp4_player/README.md
+@@ -0,0 +1,16 @@
++# MP4 player source provenance
++
++The player sources in this directory were restored from the official
++`kendryte/k230_sdk` repository at commit
++`8074e1e1adde7587d36eca6745342c14f1dcd8fb` (SDK v1.6 lineage):
++
++- `src/big/mpp/middleware/src/mp4_player/`
++
++They are redistributed under the accompanying BSD 2-Clause `LICENSE`.
++That license covers every file in this directory, including `Makefile`,
++`kplayer.c`, and `player_res.c`, whose historical copies did not repeat the
++license header inline.
++Local changes add EdgeOS playback lifecycle handling, display-resource reuse,
++and seeking through the current FFmpeg-backed `mp4_format` API. The library is
++always built from these sources; this directory contains no precompiled
++archive.
+diff --git a/middleware/src/mp4_player/display_cfg.c b/middleware/src/mp4_player/display_cfg.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e1b66cc9803b9755721934361ede809a05b4d3c
+--- /dev/null
++++ b/middleware/src/mp4_player/display_cfg.c
+@@ -0,0 +1,165 @@
++/* Copyright (c) 2023, Canaan Bright Sight Co., Ltd
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ * 1. Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++#include "display_cfg.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <getopt.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <string.h>
++#include "mpi_vo_api.h"
++#include "mpi_sys_api.h"
++#include "k_video_comm.h"
++
++#include "k_vo_comm.h"
++
++#include "k_connector_comm.h"
++#include "mpi_connector_api.h"
++
++#define ENABLE_VO_LAYER   1
++
++static k_connector_type g_connector_type = HX8377_V2_MIPI_4LAN_1080X1920_30FPS;
++
++
++void display_set_connector_type(k_connector_type type)
++{
++    g_connector_type = type;
++}
++
++typedef struct {
++    k_connector_type type;
++    k_vo_layer_id layer_id;
++    int width;
++    int height;
++    int ratation_90;
++} sample_vo_info;
++
++static k_s32 sample_vo_init(sample_vo_info* vo_info)
++{
++    k_u32 ret = 0;
++    k_s32 connector_fd;
++    k_connector_type connector_type = vo_info->type;
++    k_connector_info connector_info;
++
++    k_vo_size active_resolution = {0};
++    if (kd_mpi_vo_get_resolution(&active_resolution) == K_SUCCESS &&
++        active_resolution.width != 0 && active_resolution.height != 0) {
++        /*
++         * The LVGL desktop already owns and initialized ST7701. Re-running
++         * connector power/init here tears down the active scan-out and makes
++         * VIDEO1 black. Reuse the active connector and only configure the
++         * decoder layer.
++         */
++        printf("sample_vo_init: reuse active connector %ux%u\n",
++               active_resolution.width, active_resolution.height);
++    } else {
++        memset(&connector_info, 0, sizeof(k_connector_info));
++        ret = kd_mpi_get_connector_info(connector_type, &connector_info);
++        if (ret) {
++            printf("sample_vicap, the sensor type not supported!\n");
++            return ret;
++        }
++        connector_fd = kd_mpi_connector_open(connector_info.connector_name);
++        if (connector_fd < 0) {
++            printf("%s, connector open failed.\n", __func__);
++            return K_ERR_VO_NOTREADY;
++        }
++        kd_mpi_connector_power_set(connector_fd, K_TRUE);
++        kd_mpi_connector_init(connector_fd, connector_info);
++    }
++
++    kd_mpi_vo_disable_layer(vo_info->layer_id);
++
++    printf("%s>vo init width %d height %d\n", __func__, vo_info->width, vo_info->height);
++
++    k_vo_layer_attr vo_layer_attr;
++    memset(&vo_layer_attr, 0, sizeof(vo_layer_attr));
++    vo_layer_attr.layer_id           = vo_info->layer_id;
++    vo_layer_attr.position.x         = 0;
++    vo_layer_attr.position.y         = 0;
++    vo_layer_attr.img_size.width     = vo_info->width;
++    vo_layer_attr.img_size.height    = vo_info->height;
++    vo_layer_attr.pixel_format       = PIXEL_FORMAT_YUV_SEMIPLANAR_420; /* NV12 / YUV420SP */
++    vo_layer_attr.func               = (vo_info->ratation_90 == 1) ? GDMA_ROTATE_DEGREE_90 :GDMA_ROTATE_DEGREE_0;
++    vo_layer_attr.rot_buf_nr         = (vo_info->ratation_90 == 1) ? 3:0; /* 旋转时使用少量 GSDMA buffer */
++    vo_layer_attr.global_alpha       = 0xff;
++    vo_layer_attr.rot_buf_bpp        = 0;
++
++    printf("sample_vo_init: layer_id %d, width %d, height %d, pixel_format %d, func %d,buf_nr:%d\n",
++           vo_layer_attr.layer_id, vo_layer_attr.img_size.width, vo_layer_attr.img_size.height,
++           vo_layer_attr.pixel_format, vo_layer_attr.func,vo_layer_attr.rot_buf_nr);
++
++    ret = kd_mpi_vo_set_layer_attr(vo_info->layer_id,&vo_layer_attr);
++    if (ret != K_SUCCESS) {
++        printf("ERROR: kd_mpi_vo_set_layer_attr failed, ret=%d\n", ret);
++        return ret;
++    }
++
++    ret = kd_mpi_vo_enable_layer(vo_info->layer_id);
++    if (ret != K_SUCCESS) {
++        printf("ERROR: kd_mpi_vo_enable_layer failed, ret=%d\n", ret);
++        return ret;
++    }
++    //exit ;
++    return 0;
++}
++
++void display_layer_init(k_u32 width,k_u32 height)
++{
++    sample_vo_info vo_info;
++    vo_info.type = g_connector_type;
++    vo_info.layer_id = ENABLE_VO_LAYER;
++    vo_info.width = width;
++    vo_info.height = height;
++    vo_info.ratation_90 = 0;
++
++    if (g_connector_type == ST7701_V1_MIPI_2LAN_480X800_30FPS)
++    {
++        vo_info.ratation_90 = 1;
++    }
++    else if (g_connector_type == LT9611_MIPI_4LAN_1920X1080_30FPS)
++    {
++        vo_info.ratation_90 = 0;
++    }
++
++    sample_vo_init(&vo_info);
++
++}
++
++void display_layer_deinit()
++{
++    kd_mpi_vo_disable_layer(ENABLE_VO_LAYER);
++}
++
++k_s32 vo_init()
++{
++    return K_SUCCESS;
++}
++
++k_s32 vo_deinit()
++{
++    return K_SUCCESS;
++}
+diff --git a/middleware/src/mp4_player/display_cfg.h b/middleware/src/mp4_player/display_cfg.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..75306559e8ab1492cddbedbd12481afaad0b6513
+--- /dev/null
++++ b/middleware/src/mp4_player/display_cfg.h
+@@ -0,0 +1,50 @@
++/* Copyright (c) 2023, Canaan Bright Sight Co., Ltd
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ * 1. Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef __DISPLAY_CFG_H__
++#define __DISPLAY_CFG_H__
++
++#ifdef __cplusplus
++#if __cplusplus
++extern "C" {
++#endif
++#endif
++
++#include "k_type.h"
++#include "k_connector_comm.h"
++
++k_s32 vo_init();
++k_s32 vo_deinit();
++void display_layer_init(k_u32 width,k_u32 height);
++void display_set_connector_type(k_connector_type type);
++void display_layer_deinit();
++
++#ifdef __cplusplus
++#if __cplusplus
++}
++#endif
++#endif
++
++#endif
+diff --git a/middleware/src/mp4_player/include/kplayer.h b/middleware/src/mp4_player/include/kplayer.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f58bf6cad0881c5a3e5b47d2567ce35c736c5385
+--- /dev/null
++++ b/middleware/src/mp4_player/include/kplayer.h
+@@ -0,0 +1,145 @@
++/* Copyright (c) 2023, Canaan Bright Sight Co., Ltd
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ * 1. Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef __K_PLAYER_H__
++#define __K_PLAYER_H__
++
++#include "k_type.h"
++
++
++#ifdef __cplusplus
++#if __cplusplus
++extern "C" {
++#endif
++#endif
++
++
++typedef enum KLAYER_EVENT_E
++{
++    K_PLAYER_EVENT_EOF,          /**< the player is playing the end*/
++    K_PLAYER_EVENT_PROGRESS,
++    K_LITEPLAYER_EVENT_BUTT
++} K_PLAYER_EVENT_E;
++
++typedef struct kPLAYER_PROGRESS_INFO_E
++{
++    k_u64  total_time;          /**< total duration in milliseconds */
++    k_u64  cur_time;            /**< current position in milliseconds */
++}K_PLAYER_PROGRESS_INFO;
++
++typedef k_s32 (*K_PLAYER_EVENT_FN)(K_PLAYER_EVENT_E enEvent, void* pData);
++
++/**
++*   @brief init the player
++*   @param[in] N/A
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_init(k_bool init_vo);
++
++/**
++*   @brief deinit of the player
++*   @param[in] : N/A
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_deinit(k_bool deinit_vo);
++
++/**
++*   @brief set connector type
++*   @param[in] connector_type : set vo connector type
++*   @retval  N/A
++*/
++void kd_player_set_connector_type(int connector_type);
++
++/**
++*   @brief register call back fun
++*   @param[in] pfnCallback : K_PLAYER_EVENT_E: call back fun
++*   @param[in] pData :  call back data
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_regcallback( K_PLAYER_EVENT_FN pfnCallback,void* pData);
++
++/**
++*   @brief    set the file for playing
++*   @param[in] filePath : k_char: media file path
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_setdatasource(const k_char* filePath);
++
++/**
++*   @brief  do play of the stream
++*   @param[in] : N/A
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_start();
++
++/**
++*   @brief  pause the stream
++*   @param[in] : N/A
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_pause();
++
++/**
++*   @brief  resume the stream
++*   @param[in] : N/A
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_resume();
++
++/** Seek to the nearest key frame at timestamp_ms. */
++k_s32 kd_player_seek(k_u64 timestamp_ms);
++
++/**
++*   @brief stop the stream playing, and release the resource
++*   @retval  0 success,others failed
++*/
++k_s32 kd_player_stop();
++
++/**
++*   @brief   init picture
++*   @retval  0 success,others failed
++*/
++k_s32 kd_picture_init();
++
++/**
++*   @brief decode picture and show picture
++*   @param[in] filePath : k_char: media file path
++*   @retval  0 success,others failed
++*/
++k_s32 kd_picture_show(const k_char* filePath);
++
++/**
++*   @brief   deinit picture
++*   @retval  0 success,others failed
++*/
++k_s32 kd_picture_deinit();
++
++#ifdef __cplusplus
++#if __cplusplus
++}
++#endif
++#endif
++
++#endif
+diff --git a/middleware/src/mp4_player/kplayer.c b/middleware/src/mp4_player/kplayer.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..954c8db08664956136117bbe723cdd112a94232c
+--- /dev/null
++++ b/middleware/src/mp4_player/kplayer.c
+@@ -0,0 +1,527 @@
++#include <stdio.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <string.h>
++#include <pthread.h>
++#include <stdlib.h>
++#include <getopt.h>
++#include <signal.h>
++#include <pthread.h>
++#include <semaphore.h>
++#include <stdatomic.h>
++
++#include "kplayer.h"
++#include "player_res.h"
++#include "k_type.h"
++#include "mp4_format.h"
++
++typedef struct TAG_PLAYER_VIDEO_INFO
++{
++    k_u32 track_id;
++    k_payload_type type;
++    k_u32 width;
++    k_u32 height;
++
++} PLAYER_VIDEO_INFO;
++
++typedef struct TAG_PLAYER_AUDIO_INFO
++{
++    k_u32 track_id;
++    k_payload_type type;
++    k_u32 samplerate;
++    k_u32 channel_num;
++} PLAYER_AUDIO_INFO;
++#define INVALID_STREAM_TRACK -1
++
++static K_PLAYER_EVENT_FN g_pfnCallback = NULL;
++static void *g_data_context = NULL;
++static void *g_mp4_demuxer_handle = NULL;
++static k_char g_mp4_filename[256];
++static PLAYER_VIDEO_INFO g_player_video_info;
++static PLAYER_AUDIO_INFO g_player_audio_info;
++static k_s32 g_video_track = INVALID_STREAM_TRACK;
++static k_s32 g_audio_track = INVALID_STREAM_TRACK;
++static atomic_bool g_play_start = ATOMIC_VAR_INIT(K_FALSE);
++static atomic_bool g_play_pause = ATOMIC_VAR_INIT(K_FALSE);
++static pthread_t g_play_tid = 0;
++static k_bool g_play_thread_valid = K_FALSE;
++static k_bool g_media_open = K_FALSE;
++static K_PLAYER_PROGRESS_INFO g_progress_info;
++static int g_connector_type = 0;
++/* A single atomic value makes publishing and consuming a seek request
++ * indivisible. UINT_FAST64_MAX is reserved as the no-request sentinel. */
++static atomic_uint_fast64_t g_seek_request_ms =
++    ATOMIC_VAR_INIT(UINT_FAST64_MAX);
++
++static k_payload_type _get_payload_type(k_mp4_codec_id_e codec_id)
++{
++    if (codec_id == K_MP4_CODEC_ID_H264)
++    {
++        return K_PT_H264;
++    }
++    else if (codec_id == K_MP4_CODEC_ID_H265)
++    {
++        return K_PT_H265;
++    }
++    else if (codec_id == K_MP4_CODEC_ID_G711A)
++    {
++        return K_PT_G711A;
++    }
++    else if (codec_id == K_MP4_CODEC_ID_G711U)
++    {
++        return K_PT_G711U;
++    }
++
++    return K_PT_BUTT;
++}
++
++static k_s32 _init_mp4_demuxer(const k_char *filePath)
++{
++    memset(&g_player_video_info, 0, sizeof(g_player_video_info));
++    memset(&g_player_audio_info, 0, sizeof(g_player_audio_info));
++    g_video_track = INVALID_STREAM_TRACK;
++    g_audio_track = INVALID_STREAM_TRACK;
++
++    k_mp4_config_s mp4_config;
++    memset(&mp4_config, 0, sizeof(mp4_config));
++    mp4_config.config_type = K_MP4_CONFIG_DEMUXER;
++    if (filePath == NULL || strlen(filePath) >= sizeof(mp4_config.demuxer_config.file_name))
++    {
++        printf("mp4 file path invalid or too long.\n");
++        return -1;
++    }
++    snprintf(mp4_config.demuxer_config.file_name, sizeof(mp4_config.demuxer_config.file_name), "%s", filePath);
++    mp4_config.muxer_config.fmp4_flag = 0;
++
++    k_s32 ret = kd_mp4_create(&g_mp4_demuxer_handle, &mp4_config);
++    if (ret < 0)
++    {
++        printf("mp4 muxer create failed.\n");
++        return -1;
++    }
++
++    k_mp4_file_info_s file_info;
++    memset(&file_info, 0, sizeof(file_info));
++    ret = kd_mp4_get_file_info(g_mp4_demuxer_handle, &file_info);
++    if (ret < 0)
++    {
++        printf("k_mp4_get_file_info: get file info failed.\n");
++        kd_mp4_destroy(g_mp4_demuxer_handle);
++        g_mp4_demuxer_handle = NULL;
++        return -1;
++    }
++    //printf("k_mp4_get_file_info duration:%d,track count:%d\n",file_info.duration ,file_info.track_num);
++    /* mp4_format exposes demux timestamps in microseconds; the public player
++     * progress API and EdgeOS UI use milliseconds. */
++    g_progress_info.total_time = file_info.duration / 1000;
++
++    for (k_u32 i = 0; i < file_info.track_num; i++)
++    {
++        k_mp4_track_info_s track_info;
++        memset(&track_info, 0, sizeof(track_info));
++        ret = kd_mp4_get_track_by_index(g_mp4_demuxer_handle, i, &track_info);
++        if (ret < 0)
++        {
++            printf("k_mp4_get_track_by_index: get track: %u info failed.\n", i);
++            kd_mp4_destroy(g_mp4_demuxer_handle);
++            g_mp4_demuxer_handle = NULL;
++            return -1;
++        }
++
++        if (track_info.track_type == K_MP4_STREAM_VIDEO)
++        {
++            g_player_video_info.track_id = track_info.video_info.track_id;
++            g_player_video_info.width = track_info.video_info.width;
++            g_player_video_info.height = track_info.video_info.height;
++            g_player_video_info.type = _get_payload_type(track_info.video_info.codec_id);
++            g_video_track = track_info.video_info.track_id;
++            printf("video track info:type:%d,track_id:%d,width:%d,height:%d\n",
++                   g_player_video_info.type, track_info.video_info.track_id,
++                   track_info.video_info.width, track_info.video_info.height);
++        }
++        else if (track_info.track_type == K_MP4_STREAM_AUDIO)
++        {
++            g_player_audio_info.track_id = track_info.audio_info.track_id;
++            g_player_audio_info.type = _get_payload_type(track_info.audio_info.codec_id);
++            g_player_audio_info.samplerate = track_info.audio_info.sample_rate;
++            g_player_audio_info.channel_num = track_info.audio_info.channels;
++
++            if (g_player_audio_info.type != K_PT_G711A && g_player_audio_info.type != K_PT_G711U)
++            {
++                continue;
++            }
++            g_audio_track = track_info.audio_info.track_id;
++
++            printf("audio track info:type:%d,track_id:%d,samplerate:%d,channels:%d\n",
++                   g_player_audio_info.type, track_info.audio_info.track_id,
++                   track_info.audio_info.sample_rate, track_info.audio_info.channels);
++        }
++    }
++
++    return 0;
++}
++k_s32 kd_player_init(k_bool init_vo)
++{
++    sys_init(init_vo);
++    return K_SUCCESS;
++}
++
++k_s32 kd_player_deinit(k_bool deinit_vo)
++{
++    if (g_play_thread_valid || g_media_open)
++        kd_player_stop();
++    sys_deinit(deinit_vo);
++
++    return K_SUCCESS;
++}
++
++void kd_player_set_connector_type(int connector_type)
++{
++    g_connector_type = connector_type;
++}
++
++k_s32 kd_player_setdatasource(const k_char *filePath)
++{
++    k_s32 ret;
++    k_bool avsync = K_FALSE;
++
++    if (atomic_load_explicit(&g_play_start, memory_order_acquire) ||
++        g_play_thread_valid || g_media_open)
++    {
++        printf("kd_player_setdatasource while player is active\n");
++        return K_FAILED;
++    }
++    if (g_mp4_demuxer_handle != NULL)
++    {
++        kd_mp4_destroy(g_mp4_demuxer_handle);
++        g_mp4_demuxer_handle = NULL;
++    }
++    /* Pause/seek are per-playback state.  They must never leak into a later
++     * file opened by the same long-lived desktop process. */
++    atomic_store_explicit(&g_play_pause, K_FALSE, memory_order_relaxed);
++    atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                          memory_order_release);
++    memset(&g_progress_info, 0, sizeof(g_progress_info));
++
++    memset(g_mp4_filename, 0, sizeof(g_mp4_filename));
++    if (filePath == NULL || strlen(filePath) >= sizeof(g_mp4_filename))
++    {
++        printf("mp4 file path invalid or too long.\n");
++        return K_FAILED;
++    }
++    snprintf(g_mp4_filename, sizeof(g_mp4_filename), "%s", filePath);
++
++    ret = _init_mp4_demuxer(g_mp4_filename);
++    if (ret != K_SUCCESS)
++    {
++        printf("_init_mp4_demuxer failed\n");
++        return K_FAILED;
++    }
++
++    if (g_video_track != INVALID_STREAM_TRACK)
++    {
++        ret = disp_open(g_player_video_info.type,g_player_video_info.width,g_player_video_info.height,g_connector_type);
++        if (ret != K_SUCCESS)
++        {
++            printf("disp_open failed\n");
++            kd_mp4_destroy(g_mp4_demuxer_handle);
++            g_mp4_demuxer_handle = NULL;
++            return K_FAILED;
++        }
++        //avsync = K_TRUE;
++    }
++
++    if (g_audio_track != INVALID_STREAM_TRACK)
++    {
++        ret = ao_open(g_player_audio_info.samplerate, g_player_audio_info.channel_num, g_player_audio_info.type, avsync);
++        if (ret != K_SUCCESS)
++        {
++            printf("ao_open failed\n");
++            if (g_video_track != INVALID_STREAM_TRACK)
++            {
++                disp_close();
++            }
++            kd_mp4_destroy(g_mp4_demuxer_handle);
++            g_mp4_demuxer_handle = NULL;
++            return K_FAILED;
++        }
++    }
++
++    g_media_open = K_TRUE;
++    return K_SUCCESS;
++}
++
++static void *play_thread(void *arg)
++{
++    (void)arg;
++    k_s32 ret;
++    k_mp4_frame_data_s frame_data;
++    while (atomic_load_explicit(&g_play_start, memory_order_acquire))
++    {
++        k_bool seeked = K_FALSE;
++        uint_fast64_t seek_request =
++            atomic_exchange_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                                     memory_order_acq_rel);
++        if (seek_request != UINT_FAST64_MAX)
++        {
++            k_u64 target = (k_u64)seek_request;
++            if (kd_mp4_seek(g_mp4_demuxer_handle, &target) == 0)
++            {
++                g_progress_info.cur_time = target;
++                seeked = K_TRUE;
++            }
++        }
++        /* A seek while paused must decode exactly one frame so the preview
++         * visibly moves to the requested position.  On the next iteration
++         * the persistent pause state takes effect again. */
++        if (atomic_load_explicit(&g_play_pause, memory_order_acquire) &&
++            !seeked)
++        {
++            usleep(100*1000);
++            continue;
++        }
++        memset(&frame_data, 0, sizeof(frame_data));
++        ret = kd_mp4_get_frame(g_mp4_demuxer_handle, &frame_data);
++
++        if (ret < 0)
++        {
++            printf("k_mp4_get_frame: get frame failed.\n");
++            break;
++        }
++        if (frame_data.eof)
++        {
++            printf("demuxer finished.\n");
++            break;
++        }
++
++        if (frame_data.codec_id == K_MP4_CODEC_ID_H264 || frame_data.codec_id == K_MP4_CODEC_ID_H265)
++        {
++            if (g_video_track != INVALID_STREAM_TRACK)
++            {
++// printf("video data size:%d\n",frame_data.data_length);
++#if 0
++                printf("video data size:%d,data:0x%x_0x%x_0x%x_0x%x_0x%x_0x%x_0x%x_0x%x_0x%x_0x%x\n",\
++                frame_data.data_length,frame_data.data[0],frame_data.data[1],frame_data.data[2],frame_data.data[3],frame_data.data[4],
++                frame_data.data[5],frame_data.data[6],frame_data.data[7],frame_data.data[8],frame_data.data[9]);
++#endif
++                if (frame_data.data_length != 0)
++                {
++                    disp_play(frame_data.data, frame_data.data_length, frame_data.time_stamp, K_FALSE);
++                    g_progress_info.cur_time = frame_data.time_stamp / 1000;
++                    //printf("video data size:%d,timestamp:%d\n", frame_data.data_length,frame_data.time_stamp);
++                    if (g_pfnCallback != NULL)
++                    {
++                        g_pfnCallback(K_PLAYER_EVENT_PROGRESS, &g_progress_info);
++                    }
++                }
++            }
++        }
++        else if (frame_data.codec_id == K_MP4_CODEC_ID_G711A || frame_data.codec_id == K_MP4_CODEC_ID_G711U)
++        {
++            if (g_audio_track != INVALID_STREAM_TRACK)
++            {
++                //printf("audio data size:%d,timestamp:%d\n", frame_data.data_length,frame_data.time_stamp);
++                ao_play(frame_data.data,frame_data.data_length,frame_data.time_stamp);
++            }
++        }
++    }
++
++    /* Reject new seek requests before releasing the demuxer. */
++    atomic_store_explicit(&g_play_start, K_FALSE, memory_order_release);
++    atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                          memory_order_release);
++
++    //send over frame
++    if (g_video_track != INVALID_STREAM_TRACK)
++    {
++        char end_frame[100] = {0};
++        end_frame[0] = 0x0;
++        end_frame[1] = 0x0;
++        end_frame[2] = 0x0;
++        end_frame[3] = 0x1;
++        end_frame[4] = 0x41;
++        disp_play((k_u8*)end_frame, 100, 0, K_TRUE);
++    }
++
++    ret = K_SUCCESS;
++    if (g_mp4_demuxer_handle != NULL)
++        ret = kd_mp4_destroy(g_mp4_demuxer_handle);
++    g_mp4_demuxer_handle = NULL;
++    if (ret < 0)
++    {
++        printf("destroy mp4 failed.\n");
++    }
++
++    if (g_pfnCallback != NULL)
++    {
++        g_pfnCallback(K_PLAYER_EVENT_EOF, g_data_context);
++    }
++
++    return NULL;
++}
++
++k_s32 kd_player_start()
++{
++    int ret;
++
++    if (atomic_load_explicit(&g_play_start, memory_order_acquire) ||
++        g_play_thread_valid)
++    {
++        printf("kd_player_start already start\n");
++        return K_FAILED;
++    }
++
++    if (!g_media_open || g_mp4_demuxer_handle == NULL)
++    {
++        printf("kd_player_start without data source\n");
++        return K_FAILED;
++    }
++
++    atomic_store_explicit(&g_play_pause, K_FALSE, memory_order_relaxed);
++    atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                          memory_order_release);
++    g_progress_info.cur_time = 0;
++    atomic_store_explicit(&g_play_start, K_TRUE, memory_order_release);
++    ret = pthread_create(&g_play_tid, NULL, play_thread, NULL);
++    if (ret != 0)
++    {
++        printf("kd_player_start thread create failed: %d\n", ret);
++        atomic_store_explicit(&g_play_start, K_FALSE, memory_order_release);
++        g_play_tid = 0;
++        return K_FAILED;
++    }
++    g_play_thread_valid = K_TRUE;
++
++    return K_SUCCESS;
++}
++
++k_s32 kd_player_pause()
++{
++    atomic_store_explicit(&g_play_pause, K_TRUE, memory_order_release);
++    return K_SUCCESS;
++}
++
++k_s32 kd_player_resume()
++{
++    atomic_store_explicit(&g_play_pause, K_FALSE, memory_order_release);
++    return K_SUCCESS;
++}
++
++k_s32 kd_player_seek(k_u64 timestamp_ms)
++{
++    if (!atomic_load_explicit(&g_play_start, memory_order_acquire))
++        return K_FAILED;
++    if (timestamp_ms == UINT_FAST64_MAX)
++        return K_FAILED;
++    if (g_progress_info.total_time > 0 &&
++        timestamp_ms > g_progress_info.total_time)
++        timestamp_ms = g_progress_info.total_time;
++    atomic_store_explicit(&g_seek_request_ms, timestamp_ms,
++                          memory_order_release);
++    return K_SUCCESS;
++}
++
++k_s32 kd_player_regcallback(K_PLAYER_EVENT_FN pfnCallback, void *pData)
++{
++    g_pfnCallback = pfnCallback;
++    g_data_context = pData;
++    return 0;
++}
++
++k_s32 kd_player_stop()
++{
++    if (!g_play_thread_valid && !g_media_open)
++    {
++        atomic_store_explicit(&g_play_start, K_FALSE, memory_order_release);
++        atomic_store_explicit(&g_play_pause, K_FALSE, memory_order_relaxed);
++        atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                              memory_order_release);
++        return K_SUCCESS;
++    }
++
++    /* Wake a paused playback before joining it.  Previously g_play_pause
++     * remained true forever and the next playback opened successfully but
++     * never submitted its first frame to VDEC. */
++    atomic_store_explicit(&g_play_pause, K_FALSE, memory_order_relaxed);
++    atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                          memory_order_release);
++    atomic_store_explicit(&g_play_start, K_FALSE, memory_order_release);
++    if (g_play_thread_valid)
++    {
++        pthread_join(g_play_tid, NULL);
++        g_play_thread_valid = K_FALSE;
++        g_play_tid = 0;
++    }
++    else if (g_mp4_demuxer_handle != NULL)
++    {
++        kd_mp4_destroy(g_mp4_demuxer_handle);
++        g_mp4_demuxer_handle = NULL;
++    }
++
++    if (g_audio_track != INVALID_STREAM_TRACK)
++    {
++        ao_close();
++    }
++    if (g_video_track != INVALID_STREAM_TRACK)
++    {
++        disp_close();
++    }
++
++    g_video_track = INVALID_STREAM_TRACK;
++    g_audio_track = INVALID_STREAM_TRACK;
++    g_media_open = K_FALSE;
++    /* A racing seek request cannot leak into the next data source. */
++    atomic_store_explicit(&g_seek_request_ms, UINT_FAST64_MAX,
++                          memory_order_release);
++    memset(&g_progress_info, 0, sizeof(g_progress_info));
++
++    return K_SUCCESS;
++}
++
++
++static int g_pic_width = 1088;
++static int g_pic_height = 1920;
++static k_u8 g_pic_data[1920*1088*3/2];
++static int g_pic_size = 0;
++
++
++k_s32 kd_picture_init()
++{
++    k_s32 ret;
++    ret = disp_open(K_PT_JPEG,g_pic_width,g_pic_height,g_connector_type);
++    if (ret != K_SUCCESS)
++    {
++        printf("disp_open failed\n");
++        return K_FAILED;
++    }
++
++    return K_SUCCESS;
++}
++
++k_s32 kd_picture_show(const k_char* filePath)
++{
++    //read jpeg file
++    FILE *fp = fopen(filePath, "rb");
++    if (NULL == fp)
++    {
++        printf("open file:%s failed\n", filePath);
++        return -1;
++    }
++
++    fseek(fp, 0, SEEK_END);
++    g_pic_size = ftell(fp);
++    fseek(fp, 0, SEEK_SET);
++    fread(g_pic_data, g_pic_size, 1, fp);
++    fclose(fp);
++
++    disp_play(g_pic_data, g_pic_size, 0, K_FALSE);
++
++    return K_SUCCESS;
++}
++
++k_s32 kd_picture_deinit()
++{
++    disp_close();
++    return K_SUCCESS;
++}
+diff --git a/middleware/src/mp4_player/player_res.c b/middleware/src/mp4_player/player_res.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..a21fc131926f55792b841692b087b5ff1b9c52bf
+--- /dev/null
++++ b/middleware/src/mp4_player/player_res.c
+@@ -0,0 +1,780 @@
++#include <stdio.h>
++#include <stdio.h>
++#include <sys/mman.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <string.h>
++#include <pthread.h>
++#include <semaphore.h>
++#include <stdlib.h>
++#include <errno.h>
++#include "player_res.h"
++#include "mpi_vdec_api.h"
++#include "mpi_sys_api.h"
++#include "mpi_ao_api.h"
++#include "mpi_adec_api.h"
++#include "display_cfg.h"
++#include "mpi_vb_api.h"
++
++static k_u32 g_ao_dev = 0;
++static k_u32 g_ao_chn = 0;
++static k_handle g_adec_hdl = 0;
++#define AUDIO_PERSEC_DIV_NUM 25
++
++#define VDEC_MAX_WIDTH 1920
++#define VDEC_MAX_HEIGHT 1088
++#define OUTPUT_BUF_CNT 6
++#define INPUT_BUF_CNT 4
++#define STREAM_BUF_SIZE VDEC_MAX_WIDTH * VDEC_MAX_HEIGHT
++#define FRAME_BUF_SIZE VDEC_MAX_WIDTH *VDEC_MAX_HEIGHT * 2
++
++
++#define BIND_VO_LAYER 1
++static k_u32 g_max_sample_rate = 48000;
++
++static k_audio_stream g_audio_stream;
++static k_u32 g_audio_pool_id;
++static int g_enc_frame_len = 0;
++static k_s32 kd_sample_ao_stop(k_u32 dev,k_u32 chn);
++
++typedef struct
++{
++    k_pixel_format chn_format;
++    k_u32 file_size;
++    k_s32 pool_id;
++    pthread_t input_tid;
++    pthread_t config_vo_tid;
++    sem_t sem_vdec_done;
++    FILE *input_file;
++    k_u32 ch_id;
++    char *dump_frame;
++    k_u32 dump_frame_size;
++    k_bool done;
++    k_payload_type type;
++    k_vb_blk_handle vb_handle[INPUT_BUF_CNT];
++    k_u32 act_width;
++    k_u32 act_height;
++    k_u32 input_pool_id;
++    k_u32 output_pool_id;
++} sample_vdec_conf_t;
++
++static sample_vdec_conf_t g_vdec_conf[VDEC_MAX_CHN_NUMS];
++static k_bool g_vdec_pools_created = K_FALSE;
++static k_bool g_vdec_pool_attached = K_FALSE;
++static k_bool g_vdec_channel_created = K_FALSE;
++static k_bool g_vdec_channel_started = K_FALSE;
++static k_bool g_vdec_vo_bound = K_FALSE;
++static k_bool g_vdec_layer_initialized = K_FALSE;
++static k_bool g_vdec_first_stream = K_FALSE;
++
++static k_s32 _vdec_vb_create_pool(int ch)
++{
++    k_vb_pool_config pool_config;
++    memset(&pool_config, 0, sizeof(pool_config));
++    pool_config.blk_cnt = INPUT_BUF_CNT;
++    pool_config.blk_size = STREAM_BUF_SIZE;
++    pool_config.mode = VB_REMAP_MODE_NOCACHE;
++    g_vdec_conf[ch].input_pool_id = kd_mpi_vb_create_pool(&pool_config);
++    printf("input_pool_id %d\n", g_vdec_conf[ch].input_pool_id);
++    if (g_vdec_conf[ch].input_pool_id == VB_INVALID_POOLID)
++        return K_FAILED;
++
++    memset(&pool_config, 0, sizeof(pool_config));
++    pool_config.blk_cnt = OUTPUT_BUF_CNT;
++    pool_config.blk_size = FRAME_BUF_SIZE;
++    pool_config.mode = VB_REMAP_MODE_NOCACHE;
++    g_vdec_conf[ch].output_pool_id = kd_mpi_vb_create_pool(&pool_config);
++    printf("output_pool_id %d\n", g_vdec_conf[ch].output_pool_id);
++    if (g_vdec_conf[ch].output_pool_id == VB_INVALID_POOLID)
++    {
++        kd_mpi_vb_destory_pool(g_vdec_conf[ch].input_pool_id);
++        g_vdec_conf[ch].input_pool_id = VB_INVALID_POOLID;
++        return K_FAILED;
++    }
++
++    g_vdec_pools_created = K_TRUE;
++    return K_SUCCESS;
++}
++
++static k_s32 vb_destory_pool(int ch)
++{
++    k_s32 result = K_SUCCESS;
++    if (g_vdec_conf[ch].input_pool_id != VB_INVALID_POOLID &&
++        kd_mpi_vb_destory_pool(g_vdec_conf[ch].input_pool_id) != K_SUCCESS)
++        result = K_FAILED;
++    if (g_vdec_conf[ch].output_pool_id != VB_INVALID_POOLID &&
++        kd_mpi_vb_destory_pool(g_vdec_conf[ch].output_pool_id) != K_SUCCESS)
++        result = K_FAILED;
++    g_vdec_conf[ch].input_pool_id = VB_INVALID_POOLID;
++    g_vdec_conf[ch].output_pool_id = VB_INVALID_POOLID;
++    g_vdec_pools_created = K_FALSE;
++    return result;
++}
++
++k_s32 sys_init(k_bool init_vo)
++{
++    k_s32 ret;
++    if (init_vo)
++    {
++        vo_init();
++    }
++
++    k_vb_config config;
++    memset(&config, 0, sizeof(config));
++    config.max_pool_cnt = 64;
++
++     /* vb pool config */
++    ret = kd_mpi_vb_set_config(&config);
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_vb_set_config failed:0x%08x\n",ret);
++        return -1;
++    }
++
++    /* vb pool init */
++    ret = kd_mpi_vb_init();
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_vb_init failed:0x%08x\n",ret);
++        return -1;
++    }
++    return ret;
++}
++
++k_s32 sys_deinit(k_bool deinit_vo)
++{
++    k_s32 ret;
++    ret = kd_mpi_vb_exit();
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_vb_exit failed:0x%08x\n",ret);
++        return -1;
++    }
++
++    if (deinit_vo)
++    {
++        vo_deinit();
++    }
++
++    return ret;
++}
++
++static k_s32 kd_sample_vdec_bind_vo(k_u32 chn_num, k_u32 vo_dev, k_u32 vo_chn)
++{
++    k_mpp_chn vdec_mpp_chn;
++    k_mpp_chn vvo_mpp_chn;
++    k_s32 ret;
++
++    vdec_mpp_chn.mod_id = K_ID_VDEC;
++    vdec_mpp_chn.dev_id = 0;
++    vdec_mpp_chn.chn_id = chn_num;
++    vvo_mpp_chn.mod_id = K_ID_VO;
++    vvo_mpp_chn.dev_id = vo_dev;
++    vvo_mpp_chn.chn_id = vo_chn;
++    ret = kd_mpi_sys_bind(&vdec_mpp_chn, &vvo_mpp_chn);
++    if (ret)
++    {
++        printf("kd_mpi_sys_bind failed:0x%x\n", ret);
++    }
++    return ret;
++}
++
++
++static k_s32 kd_sample_vdec_unbind_vo(k_u32 chn_num, k_u32 vo_dev, k_u32 vo_chn)
++{
++    k_mpp_chn vdec_mpp_chn;
++    k_mpp_chn vvo_mpp_chn;
++    k_s32 ret;
++
++    vdec_mpp_chn.mod_id = K_ID_VDEC;
++    vdec_mpp_chn.dev_id = 0;
++    vdec_mpp_chn.chn_id = chn_num;
++    vvo_mpp_chn.mod_id = K_ID_VO;
++    vvo_mpp_chn.dev_id = vo_dev;
++    vvo_mpp_chn.chn_id = vo_chn;
++
++    ret = kd_mpi_sys_unbind(&vdec_mpp_chn, &vvo_mpp_chn);
++    return ret;
++}
++
++static k_s32 _initvo(k_u32 width,k_u32 height,k_u32 vdec_chn,int type)
++{
++    //init vo
++    display_set_connector_type((k_connector_type)type);
++    display_layer_init(width,height);
++    g_vdec_layer_initialized = K_TRUE;
++
++    if (K_SUCCESS != kd_sample_vdec_bind_vo(vdec_chn, 0, BIND_VO_LAYER))
++    {
++        printf("kd_sample_vdec_bind_vo failed\n");
++        return K_FAILED;
++    }
++    g_vdec_vo_bound = K_TRUE;
++
++    return K_SUCCESS;
++}
++
++k_s32 disp_open(k_payload_type video_dec_type,k_u32 width,k_u32 height,int type)
++{
++    int ch = 0;
++
++    if (g_vdec_pools_created || g_vdec_pool_attached ||
++        g_vdec_channel_created || g_vdec_channel_started ||
++        g_vdec_vo_bound || g_vdec_layer_initialized)
++    {
++        printf("disp_open: cleaning stale VDEC resources\n");
++        disp_close();
++    }
++    memset(&g_vdec_conf[ch], 0, sizeof(g_vdec_conf[ch]));
++    g_vdec_conf[ch].ch_id = ch;
++    g_vdec_conf[ch].input_pool_id = VB_INVALID_POOLID;
++    g_vdec_conf[ch].output_pool_id = VB_INVALID_POOLID;
++    g_vdec_first_stream = K_TRUE;
++
++    if (_vdec_vb_create_pool(0) != K_SUCCESS)
++    {
++        printf("_vb_create_pool error\n");
++        return K_FAILED;
++    }
++
++    if (kd_mpi_vdec_attach_vb_pool(ch,g_vdec_conf[ch].output_pool_id) != K_SUCCESS)
++    {
++        printf("kd_mpi_vdec_attach_vb_pool error\n");
++        goto failed;
++    }
++    g_vdec_pool_attached = K_TRUE;
++
++    k_vdec_chn_attr attr;
++    memset(&attr, 0, sizeof(attr));
++    attr.pic_width = VDEC_MAX_WIDTH;
++    attr.pic_height = VDEC_MAX_HEIGHT;
++    attr.stream_buf_size = STREAM_BUF_SIZE;
++    attr.type = video_dec_type;
++    attr.mode = K_VDEC_SEND_MODE_FRAME;
++
++    if (K_SUCCESS != kd_mpi_vdec_create_chn(ch, &attr))
++    {
++        printf("kd_mpi_vdec_create_chn failed\n");
++        goto failed;
++    }
++    g_vdec_channel_created = K_TRUE;
++
++    k_u32 display_width = width;
++    k_u32 display_height = height;
++    if (width > 640 || height > 480)
++    {
++        k_vdec_downscale downscale;
++        memset(&downscale, 0, sizeof(downscale));
++        downscale.dsl_mode = K_VDEC_DSL_MODE_BY_SIZE;
++        downscale.dsl_size.dsl_frame_width = 640;
++        downscale.dsl_size.dsl_frame_height = 480;
++        if (kd_mpi_vdec_set_downscale(ch, &downscale) != K_SUCCESS)
++        {
++            printf("kd_mpi_vdec_set_downscale failed\n");
++            goto failed;
++        }
++        display_width = 640;
++        display_height = 480;
++        printf("VDEC: downscale %ux%u to 640x480 for ST7701\n",
++               width, height);
++    }
++
++    if (K_SUCCESS != kd_mpi_vdec_start_chn(ch))
++    {
++        printf("kd_mpi_vdec_start_chn failed\n");
++        goto failed;
++    }
++    g_vdec_channel_started = K_TRUE;
++
++    if (_initvo(display_width,display_height,ch,type) != K_SUCCESS)
++        goto failed;
++
++    return K_SUCCESS;
++
++failed:
++    disp_close();
++    return K_FAILED;
++}
++
++
++static k_s32 g_mmap_fd_tmp = 0;
++static void *_sys_mmap(k_u64 phys_addr, k_u32 size)
++{
++    void *virt_addr = NULL;
++    void *mmap_addr = NULL;
++    k_u32 page_size = sysconf(_SC_PAGESIZE);
++    k_u64 page_mask = (page_size - 1);
++    k_u32 mmap_size = ((size) + (phys_addr & page_mask) + page_mask) & ~(page_mask);
++
++    if (g_mmap_fd_tmp == 0)
++    {
++        g_mmap_fd_tmp = open("/dev/mem", O_RDWR | O_SYNC);
++    }
++
++    mmap_addr = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_mmap_fd_tmp, phys_addr & ~page_mask);
++
++    if (mmap_addr != (void *)-1)
++        virt_addr = (void *)((char *)mmap_addr + (phys_addr & page_mask));
++    else
++    {
++        printf("mmap addr error: %p %s.\n", mmap_addr, strerror(errno));
++    }
++
++    return virt_addr;
++}
++
++static k_s32 _sys_munmap(k_u64 phy_addr, void *virt_addr, k_u32 size)
++{
++    if (g_mmap_fd_tmp == 0)
++    {
++        return -1;
++    }
++    int ret;
++
++    k_u32 page_size = sysconf(_SC_PAGESIZE);
++    k_u64 page_mask = page_size - 1;
++    k_u32 mmap_size = ((size) + (phy_addr & page_mask) + page_mask) & ~(page_mask);
++    ret = munmap((void *)((k_u64)(virt_addr) & ~page_mask), mmap_size);
++    if (ret == -1)
++    {
++        printf("munmap error.\n");
++    }
++
++    return 0;
++}
++
++static k_s32 kd_sample_sys_get_vb_block_from_pool_id(k_u32 pool_id, k_u64 *phys_addr, k_u64 blk_size, const char* mmz_name)
++{
++    k_vb_blk_handle handle;
++    k_u64 get_phys_addr;
++
++    handle = kd_mpi_vb_get_block(pool_id, blk_size, mmz_name);
++    if(handle == VB_INVALID_HANDLE) {
++        //printf("kd_mpi_vb_get_block get failed\n");
++        return -1;
++    }
++
++    get_phys_addr = kd_mpi_vb_handle_to_phyaddr(handle);
++    if(get_phys_addr == 0) {
++        printf("kd_mpi_vb_handle_to_phyaddr failed111:0x%x,pool_id:%d\n",handle,pool_id);
++        return -1;
++    }
++
++    *phys_addr = get_phys_addr;
++
++    return 0;
++}
++
++static k_s32 kd_sample_sys_release_vb_block(k_u64 phys_addr, k_u64 blk_size)
++{
++    k_s32 ret;
++    k_vb_blk_handle handle;
++    (void)blk_size;
++
++    handle = kd_mpi_vb_phyaddr_to_handle(phys_addr);
++    if(handle == VB_INVALID_HANDLE) {
++        printf("kd_mpi_vb_phyaddr_to_handle failed\n");
++        return -1;
++    }
++
++    ret = kd_mpi_vb_release_block(handle);
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_vb_release_block failed\n");
++        return -1;
++    }
++
++    return K_SUCCESS;
++}
++
++k_s32 disp_play(k_u8*pdata,k_u32 len,k_u64 timestamp,k_bool end_stream)
++{
++    k_s32 ret;
++    sample_vdec_conf_t *vdec_conf;
++    k_vdec_stream stream;
++    vdec_conf = &g_vdec_conf[0];
++    int poolid = vdec_conf->input_pool_id;
++    k_u64 phys_addr = 0;
++    k_u8 *virt_addr;
++    k_u32 blk_size;
++
++    blk_size = len;
++
++    if (g_vdec_first_stream && !end_stream)
++    {
++        printf("VDEC: first stream pts=%llu, size=%u\n",
++               (unsigned long long)timestamp, len);
++        g_vdec_first_stream = K_FALSE;
++    }
++
++    for (int retry = 0; retry < 100; retry++)
++    {
++        ret = kd_sample_sys_get_vb_block_from_pool_id(poolid, &phys_addr, blk_size, NULL);
++        if (K_SUCCESS != ret)
++        {
++            usleep(30000);
++            continue;
++        }
++        break;
++    }
++    if (phys_addr == 0)
++    {
++        printf("kd_sample_sys_get_vb_block_from_pool_id timeout\n");
++        return K_FAILED;
++    }
++
++    vdec_conf->pool_id = poolid;
++    virt_addr = (unsigned char*)_sys_mmap(phys_addr, blk_size);
++    if (virt_addr == NULL)
++    {
++        kd_sample_sys_release_vb_block(phys_addr, blk_size);
++        return K_FAILED;
++    }
++
++    memcpy(virt_addr,pdata,len);
++    stream.phy_addr = phys_addr;
++    stream.len = len;
++    stream.pts = timestamp;
++    stream.end_of_stream = end_stream;
++
++    ret = kd_mpi_vdec_send_stream(0, &stream, -1);
++    if (K_SUCCESS != ret)
++    {
++        printf("kd_mpi_vdec_send_stream failed\n");
++        _sys_munmap(phys_addr, virt_addr, blk_size);
++        kd_sample_sys_release_vb_block(phys_addr, blk_size);
++        return K_FAILED;
++    }
++    _sys_munmap(phys_addr, virt_addr, blk_size);
++    ret = kd_sample_sys_release_vb_block(phys_addr, blk_size);
++    if (K_SUCCESS != ret)
++    {
++        printf("kd_sample_sys_release_vb_block failed\n");
++        return K_FAILED;
++    }
++
++    if(end_stream)
++    {
++        // check vdec over
++        k_vdec_chn_status status;
++        int eos_wait;
++        for (eos_wait = 0; eos_wait < 2000; ++eos_wait)
++        {
++            ret = kd_mpi_vdec_query_status(vdec_conf->ch_id, &status);
++            if (K_SUCCESS != ret)
++            {
++                printf("kd_mpi_vdec_query_status failed\n");
++                break;
++            }
++
++            if (status.end_of_stream)
++            {
++                printf("%s>ch %d, receive eos\n", __func__, vdec_conf->ch_id);
++                break;
++            }
++            usleep(1000);
++        }
++        if (eos_wait == 2000)
++            printf("disp_play: VDEC EOS wait timed out\n");
++    }
++
++    return K_SUCCESS;
++}
++
++k_s32 disp_close()
++{
++    int ch = 0;
++    k_s32 result = K_SUCCESS;
++    if (g_vdec_vo_bound &&
++        K_SUCCESS != kd_sample_vdec_unbind_vo(ch, 0, BIND_VO_LAYER))
++    {
++        printf("kd_sample_vdec_unbind_vo failed\n");
++        result = K_FAILED;
++    }
++    g_vdec_vo_bound = K_FALSE;
++
++    if (g_vdec_channel_started && K_SUCCESS != kd_mpi_vdec_stop_chn(ch))
++    {
++        printf("kd_mpi_vdec_stop_chn failed\n");
++        result = K_FAILED;
++    }
++    g_vdec_channel_started = K_FALSE;
++
++    if (g_vdec_pool_attached && K_SUCCESS != kd_mpi_vdec_detach_vb_pool(ch))
++    {
++        printf("kd_mpi_vdec_detach_vb_pool failed\n");
++        result = K_FAILED;
++    }
++    g_vdec_pool_attached = K_FALSE;
++
++    if (g_vdec_channel_created && K_SUCCESS != kd_mpi_vdec_destroy_chn(ch))
++    {
++        printf("kd_mpi_vdec_destroy_chn failed\n");
++        result = K_FAILED;
++    }
++    g_vdec_channel_created = K_FALSE;
++
++    if (g_vdec_layer_initialized)
++        display_layer_deinit();
++    g_vdec_layer_initialized = K_FALSE;
++
++    if (g_vdec_pools_created && vb_destory_pool(0) != K_SUCCESS)
++    {
++        printf("vb_destory_pool error");
++        result = K_FAILED;
++    }
++    g_vdec_first_stream = K_FALSE;
++
++    return result;
++}
++
++static k_s32 kd_sample_adec_bind_ao(k_u32 ao_dev,k_u32 ao_chn, k_handle adec_hdl)
++{
++    k_mpp_chn ao_mpp_chn;
++    k_mpp_chn adec_mpp_chn;
++
++    adec_mpp_chn.mod_id = K_ID_ADEC;
++    adec_mpp_chn.dev_id = 0;
++    adec_mpp_chn.chn_id = adec_hdl;
++    ao_mpp_chn.mod_id = K_ID_AO;
++    ao_mpp_chn.dev_id = ao_dev;
++    ao_mpp_chn.chn_id = ao_chn;
++
++    return kd_mpi_sys_bind(&adec_mpp_chn, &ao_mpp_chn);
++}
++
++static k_s32 kd_sample_adec_unbind_ao(k_u32 ao_dev,k_u32 ao_chn, k_handle adec_hdl)
++{
++    k_mpp_chn ao_mpp_chn;
++    k_mpp_chn adec_mpp_chn;
++
++    adec_mpp_chn.mod_id = K_ID_ADEC;
++    adec_mpp_chn.dev_id = 0;
++    adec_mpp_chn.chn_id = adec_hdl;
++    ao_mpp_chn.mod_id = K_ID_AO;
++    ao_mpp_chn.dev_id = ao_dev;
++    ao_mpp_chn.chn_id = ao_chn;
++
++    return kd_mpi_sys_unbind(&adec_mpp_chn, &ao_mpp_chn);
++}
++
++static k_s32 kd_sample_sys_get_vb_block(k_u32 *pool_id, k_u64 *phys_addr, k_u64 blk_size, const char* mmz_name)
++{
++    k_vb_blk_handle handle;
++    k_u64 get_phys_addr;
++    k_u32 get_pool_id;
++
++    handle = kd_mpi_vb_get_block(VB_INVALID_POOLID, blk_size, mmz_name);
++    if(handle == VB_INVALID_HANDLE) {
++        printf("kd_mpi_vb_get_block get failed22\n");
++        return -1;
++    }
++
++    get_phys_addr = kd_mpi_vb_handle_to_phyaddr(handle);
++    if(get_phys_addr == 0) {
++        printf("kd_mpi_vb_handle_to_phyaddr failed2222:0x%x\n",handle);
++        return -1;
++    }
++
++    get_pool_id = kd_mpi_vb_handle_to_pool_id(handle);
++    if(get_pool_id == VB_INVALID_POOLID) {
++        printf("kd_mpi_vb_handle_to_pool_id failed\n");
++        return -1;
++    }
++#if 0
++    get_virt_addr = kd_mpi_sys_mmap(get_phys_addr, blk_size);
++#endif
++    *phys_addr = get_phys_addr;
++    *pool_id = get_pool_id;
++
++    return K_SUCCESS;
++}
++
++static k_s32 kd_sample_ao_start(k_u32 dev,k_u32 chn)
++{
++    k_s32 ret;
++    if (dev != 0)
++    {
++        printf("dev value not supported\n");
++        return K_FAILED;
++    }
++
++    if (chn > 2)
++    {
++        printf("chn value not supported\n");
++        return K_FAILED;
++    }
++
++    ret = kd_mpi_ao_enable(dev);
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_ao_enable failed:0x%x\n", ret);
++        return K_FAILED;
++    }
++
++    if (2 == chn)
++    {
++        for (int i =0;i < 2;i ++)
++        {
++            ret = kd_mpi_ao_enable_chn(dev,i);
++            if(ret != K_SUCCESS) {
++                printf("kd_mpi_ao_enable_chn(%d) failed:0x%x\n",i, ret);
++                return K_FAILED;
++            }
++        }
++    }
++    else
++    {
++        ret = kd_mpi_ao_enable_chn(dev,chn);
++        if(ret != K_SUCCESS) {
++        printf("kd_mpi_ao_enable_chn failed:0x%x\n", ret);
++        return K_FAILED;
++        }
++    }
++
++    return ret;
++}
++
++k_s32 ao_open(k_s32 s32SampleRate, k_s32 s32ChanNum,k_payload_type audio_dec_type, k_bool avsync)
++{
++    k_aio_dev_attr aio_dev_attr;
++    aio_dev_attr.audio_type = KD_AUDIO_OUTPUT_TYPE_I2S;
++    aio_dev_attr.avsync = avsync;
++    aio_dev_attr.kd_audio_attr.i2s_attr.sample_rate = s32SampleRate;
++    aio_dev_attr.kd_audio_attr.i2s_attr.bit_width = KD_AUDIO_BIT_WIDTH_16;
++    aio_dev_attr.kd_audio_attr.i2s_attr.chn_cnt = 2;
++    aio_dev_attr.kd_audio_attr.i2s_attr.snd_mode = (1==s32ChanNum)?KD_AUDIO_SOUND_MODE_MONO:KD_AUDIO_SOUND_MODE_STEREO;
++    aio_dev_attr.kd_audio_attr.i2s_attr.i2s_mode = K_STANDARD_MODE;
++    aio_dev_attr.kd_audio_attr.i2s_attr.frame_num = AUDIO_PERSEC_DIV_NUM;
++    aio_dev_attr.kd_audio_attr.i2s_attr.point_num_per_frame = s32SampleRate / AUDIO_PERSEC_DIV_NUM;
++    aio_dev_attr.kd_audio_attr.i2s_attr.i2s_type =  K_AIO_I2STYPE_INNERCODEC;
++
++    if (K_SUCCESS != kd_mpi_ao_set_pub_attr(g_ao_dev, &aio_dev_attr))
++    {
++        printf("kd_mpi_ao_set_pub_attr failed\n");
++        return K_FAILED;
++    }
++
++    if (K_SUCCESS != kd_sample_ao_start(g_ao_dev,g_ao_chn))
++    {
++        printf("kd_mpi_ao_enable failed\n");
++        return K_FAILED;
++    }
++
++    k_adec_chn_attr adec_chn_attr;
++    adec_chn_attr.type = audio_dec_type;
++    adec_chn_attr.buf_size = AUDIO_PERSEC_DIV_NUM;
++    adec_chn_attr.point_num_per_frame = s32SampleRate / adec_chn_attr.buf_size;
++    adec_chn_attr.mode = K_ADEC_MODE_PACK;
++
++    if (K_SUCCESS != kd_mpi_adec_create_chn(g_adec_hdl, &adec_chn_attr))
++    {
++        printf("kd_mpi_adec_create_chn faild\n");
++        return K_FAILED;
++    }
++
++    if(K_SUCCESS != kd_sample_adec_bind_ao(g_ao_dev,g_ao_chn,g_adec_hdl)) {
++        printf("kd_sample_adec_bind_ao failed\n");
++        return K_FAILED;
++    }
++
++    g_enc_frame_len = s32SampleRate * 2 * 2 / AUDIO_PERSEC_DIV_NUM / 2;
++    if (K_SUCCESS != kd_sample_sys_get_vb_block(&g_audio_pool_id, &g_audio_stream.phys_addr, g_enc_frame_len, NULL))
++    {
++        kd_sample_adec_unbind_ao(g_ao_dev,g_ao_chn,g_adec_hdl);
++        kd_mpi_adec_destroy_chn(g_adec_hdl);
++        kd_sample_ao_stop(g_ao_dev,g_ao_chn);
++        return K_FAILED;
++    }
++    g_audio_stream.stream = _sys_mmap(g_audio_stream.phys_addr,g_enc_frame_len);
++    if (g_audio_stream.stream == NULL)
++    {
++        kd_sample_sys_release_vb_block(g_audio_stream.phys_addr, g_enc_frame_len);
++        kd_sample_adec_unbind_ao(g_ao_dev,g_ao_chn,g_adec_hdl);
++        kd_mpi_adec_destroy_chn(g_adec_hdl);
++        kd_sample_ao_stop(g_ao_dev,g_ao_chn);
++        return K_FAILED;
++    }
++
++    return K_SUCCESS;
++}
++
++k_s32 ao_play(k_u8*pdata,k_u32 len,k_u64 timestamp)
++{
++    if ((int)len > g_enc_frame_len)
++    {
++        printf("ao_play data too large:%u max:%d\n", len, g_enc_frame_len);
++        return K_FAILED;
++    }
++    memcpy(g_audio_stream.stream, pdata, len);
++    g_audio_stream.seq++;
++    g_audio_stream.time_stamp = timestamp;
++    g_audio_stream.len = len;
++
++    return kd_mpi_adec_send_stream(g_adec_hdl,&g_audio_stream,K_TRUE);
++}
++
++static k_s32 kd_sample_ao_stop(k_u32 dev,k_u32 chn)
++{
++    k_s32 ret;
++
++    if (dev != 0)
++    {
++        printf("dev value not supported\n");
++        return K_FAILED;
++    }
++
++    if (chn > 2)
++    {
++        printf("chn value not supported\n");
++        return K_FAILED;
++    }
++
++    if (2 == chn)
++    {
++        for (int i =0;i < 2;i ++)
++        {
++            ret = kd_mpi_ao_disable_chn(dev,i);
++            if(ret != K_SUCCESS) {
++            printf("kd_mpi_ao_disable_chn(%d) failed:0x%x\n",i, ret);
++            return K_FAILED;
++            }
++        }
++    }
++    else
++    {
++        ret = kd_mpi_ao_disable_chn(dev,chn);
++        if(ret != K_SUCCESS) {
++        printf("kd_mpi_ao_disable_chn failed:0x%x\n", ret);
++        return K_FAILED;
++        }
++    }
++
++    ret = kd_mpi_ao_disable(dev);
++    if(ret != K_SUCCESS) {
++        printf("kd_mpi_ai_disable failed:0x%x\n", ret);
++        return K_FAILED;
++    }
++
++    return ret;
++}
++
++k_s32 ao_close()
++{
++    if (K_SUCCESS !=kd_sample_ao_stop(g_ao_dev,g_ao_chn))
++    {
++        printf("kd_sample_ao_stop failed\n");
++        return K_FAILED;
++    }
++
++    if(K_SUCCESS != kd_sample_adec_unbind_ao(g_ao_dev,g_ao_chn,g_adec_hdl)) {
++        printf("kd_sample_adec_unbind_ao failed\n");
++        return K_FAILED;
++    }
++
++    if (K_SUCCESS != kd_mpi_adec_destroy_chn(g_adec_hdl))
++    {
++        printf("kd_mpi_adec_destroy_chn failed\n");
++        return K_FAILED;
++    }
++
++    kd_sample_sys_release_vb_block(g_audio_stream.phys_addr, g_enc_frame_len);
++    _sys_munmap(g_audio_stream.phys_addr,g_audio_stream.stream,g_enc_frame_len);
++
++    return K_SUCCESS;
++}
+diff --git a/middleware/src/mp4_player/player_res.h b/middleware/src/mp4_player/player_res.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c57bf6bace1c0ec59e19fd710090b2f74be488b
+--- /dev/null
++++ b/middleware/src/mp4_player/player_res.h
+@@ -0,0 +1,57 @@
++/* Copyright (c) 2023, Canaan Bright Sight Co., Ltd
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ * 1. Redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
++ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
++ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
++ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
++ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
++ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
++ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
++ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef __K_PLAYER_RES_H__
++#define __K_PLAYER_RES_H__
++
++#include "k_type.h"
++#include "k_payload_comm.h"
++#include "kplayer.h"
++
++
++#ifdef __cplusplus
++#if __cplusplus
++extern "C" {
++#endif
++#endif
++
++k_s32 sys_init(k_bool init_vo);
++k_s32 sys_deinit(k_bool deinit_vo);
++
++k_s32 disp_open(k_payload_type video_dec_type,k_u32 width,k_u32 height,int type);//K_PT_H264/K_PT_H265
++k_s32 disp_play(k_u8*pdata,k_u32 len,k_u64 timestamp,k_bool end_stream);
++k_s32 disp_close();
++
++k_s32 ao_open(k_s32 s32SampleRate, k_s32 s32ChanNum,k_payload_type audio_dec_type, k_bool avsync);//K_PT_G711A/K_PT_G711U
++k_s32 ao_play(k_u8*pdata,k_u32 len,k_u64 timestamp);
++k_s32 ao_close();
++
++#ifdef __cplusplus
++#if __cplusplus
++}
++#endif
++#endif
++
++#endif

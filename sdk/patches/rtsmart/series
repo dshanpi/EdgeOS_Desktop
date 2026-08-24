@@ -1,0 +1,4 @@
+0001-feat-ota-add-fail-safe-A-B-update-sessions.patch
+0002-feat-mount-select-EdgeOS-application-slot-from-ATAG.patch
+0003-fix-touch-ignore-empty-event-queue-reads.patch
+0004-feat-pmu-expose-reboot-control-ioctls.patch

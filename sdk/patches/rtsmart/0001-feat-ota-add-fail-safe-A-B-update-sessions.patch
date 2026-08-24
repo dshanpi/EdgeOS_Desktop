@@ -1,0 +1,1403 @@
+From 9bae6417e2112133088ad056eb95eb23e1828ff3 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:22:37 -0400
+Subject: [PATCH 1/4] feat(ota): add fail-safe A/B update sessions
+
+---
+ kernel/bsp/maix3/board/k230_atag.c    |  16 +
+ kernel/bsp/maix3/board/k230_atag.h    |  13 +-
+ kernel/bsp/maix3/components/ota/ota.c | 913 ++++++++++++++++++++------
+ 3 files changed, 754 insertions(+), 188 deletions(-)
+
+diff --git a/kernel/bsp/maix3/board/k230_atag.c b/kernel/bsp/maix3/board/k230_atag.c
+index a02e7b088e2bee3b4c403b3c39f2ac69068fd68a..5fc2b2aa2fa053e7b7bd425074edc34d4f8ecf25 100644
+--- a/kernel/bsp/maix3/board/k230_atag.c
++++ b/kernel/bsp/maix3/board/k230_atag.c
+@@ -59,9 +59,18 @@ static int parse_tag_k230_rtapp(const struct tag *tag)
+ 	return 0;
+ }
+ 
++static int parse_tag_k230_ota_slot(const struct tag *tag)
++{
++	rt_uint32_t slot = tag->u.k230_ota_slot.slot;
++
++	g_atag_info.ota_slot = (slot == 'A' || slot == 'B') ? (char)slot : 0;
++	return 0;
++}
++
+ __tagtable(ATAG_CORE, parse_tag_k230_core);
+ __tagtable(ATAG_K230_DDR_SIZE, parse_tag_k230_ddr_size);
+ __tagtable(ATAG_K230_RTAPP, parse_tag_k230_rtapp);
++__tagtable(ATAG_K230_OTA_SLOT, parse_tag_k230_ota_slot);
+ 
+ static int parse_tag(const struct tag *tag)
+ {
+@@ -182,3 +191,10 @@ rt_bool_t k230_atag_get_rtapp_loadaddr(rt_uint64_t *addr)
+ 	return RT_TRUE;
+ }
+ 
++char k230_atag_get_ota_slot(void)
++{
++	if (!g_atag_parsed && k230_atag_parse(NULL) != 0)
++		return 0;
++
++	return g_atag_info.ota_slot;
++}
+diff --git a/kernel/bsp/maix3/board/k230_atag.h b/kernel/bsp/maix3/board/k230_atag.h
+index e5ed34ff245684ad352dec00b2d872e3c16cd802..6fcdff093cdc7826e6327640a2c0a2c773fdd392 100644
+--- a/kernel/bsp/maix3/board/k230_atag.h
++++ b/kernel/bsp/maix3/board/k230_atag.h
+@@ -36,6 +36,7 @@
+ /* K230-specific ATAG extensions */
+ #define ATAG_K230_DDR_SIZE	0x54410002	/* K230 DDR size information */
+ #define ATAG_K230_RTAPP		0x54410003	/* K230 RTAPP preload information */
++#define ATAG_K230_OTA_SLOT	0x54410004	/* Selected OTA A/B slot */
+ 
+ struct tag_core {
+     rt_uint32_t flags;
+@@ -50,6 +51,13 @@ struct tag_k230_rtapp {
+ 	rt_uint64_t load_address;	/* RTAPP load address */
+ };
+ 
++struct tag_k230_ota_slot {
++	rt_uint32_t slot;	/* ASCII 'A' or 'B' */
++};
++
++_Static_assert(sizeof(struct tag_k230_ota_slot) == sizeof(rt_uint32_t),
++               "K230 OTA slot ATAG ABI changed");
++
+ struct tag_header {
+ 	rt_uint32_t size;
+ 	rt_uint32_t tag;
+@@ -60,7 +68,8 @@ struct tag {
+ 	union {
+         struct tag_core             core;
+         struct tag_k230_ddr_size	k230_ddr;
+-        struct tag_k230_rtapp		k230_rtapp;
++		struct tag_k230_rtapp		k230_rtapp;
++		struct tag_k230_ota_slot	k230_ota_slot;
+ 	} u;
+ };
+ 
+@@ -78,6 +87,7 @@ struct k230_atag_info {
+ 	rt_uint64_t ddr_size;
+ 	rt_uint64_t rtapp_size;
+ 	rt_uint64_t rtapp_load_addr;
++	char ota_slot;
+ };
+ 
+ /* ATAG parser table structure */
+@@ -96,5 +106,6 @@ int k230_atag_parse(struct k230_atag_info *info);
+ rt_uint64_t k230_atag_get_ddr_size(void);
+ rt_bool_t k230_atag_get_rtapp_size(rt_uint64_t *size);
+ rt_bool_t k230_atag_get_rtapp_loadaddr(rt_uint64_t *addr);
++char k230_atag_get_ota_slot(void);
+ 
+ #endif /* __K230_ATAG_RTT_H__ */
+diff --git a/kernel/bsp/maix3/components/ota/ota.c b/kernel/bsp/maix3/components/ota/ota.c
+index 2312bd297f6e75cfe97963299ef6875cbaa16ac1..0b49f56d87ff9ff4d713694676dc8a33d336940d 100644
+--- a/kernel/bsp/maix3/components/ota/ota.c
++++ b/kernel/bsp/maix3/components/ota/ota.c
+@@ -26,6 +26,8 @@
+ #include <rthw.h>
+ #include <rtdevice.h>
+ #include <dfs_fs.h>
++#include <dfs_file.h>
++#include <lwp_user_mm.h>
+ 
+ #include "sysctl_boot.h"
+ 
+@@ -33,6 +35,7 @@
+ #include <drivers/mtd_nand.h>
+ 
+ #include "sha256_ota.h"
++#include "k230_atag.h"
+ 
+ #define DBG_TAG   "ota"
+ #define DBG_LVL   DBG_INFO
+@@ -52,6 +55,16 @@
+  *  - boot/ota 通过 magic + crc32 校验版本块是否有效
+  */
+ #define OTA_META_MAGIC         0x4f544156u  /* 'OTAV' */
++#define OTA_META_PENDING       0x80000000u
++#define OTA_META_ATTEMPTS_MASK 0x000000ffu
++#define OTA_META_TRIAL_ATTEMPTS 3u
++
++#define K230_OTA_IOCTL_CONFIRM_BOOT 0x4f01
++#define K230_OTA_IOCTL_GET_STATUS   0x4f02
++#define K230_OTA_IOCTL_ABORT_UPDATE 0x4f03
++
++#define K230_OTA_TRIAL_GUARD_MS 45000u
++#define KDIMG_MAX_PARTS        64u
+ 
+ struct ota_partition {
+     char        name[32];
+@@ -117,11 +130,31 @@ struct ota_slot_meta {
+     rt_uint8_t  padding[512u - 16];
+ } __attribute__((packed));
+ 
++_Static_assert(sizeof(struct ota_slot_meta) == 512u,
++               "OTA metadata ABI must remain one 512-byte sector");
++
++struct ota_user_status {
++    rt_uint32_t version_a;
++    rt_uint32_t version_b;
++    rt_uint8_t valid_a;
++    rt_uint8_t valid_b;
++    rt_uint8_t pending_a;
++    rt_uint8_t pending_b;
++    rt_uint8_t attempts_a;
++    rt_uint8_t attempts_b;
++    char active_slot;
++    char reserved;
++};
++
++_Static_assert(sizeof(struct ota_user_status) == 16u,
++               "k230_ota_status_t userspace ABI changed");
++
+ /* 统一的 OTA 存储操作函数原型，供其它内核模块使用 */
+ rt_err_t ota_storage_init(void);
+ rt_err_t ota_storage_erase(rt_uint64_t offset, rt_uint64_t size);
+ rt_err_t ota_storage_write(rt_uint64_t offset, const void *buf, rt_size_t len);
+ rt_err_t ota_storage_read(rt_uint64_t offset, void *buf, rt_size_t len);
++rt_err_t ota_storage_sync(void);
+ 
+ struct ota_ioctl_erase_arg {
+     rt_uint64_t offset;	/* 以字节为单位 */
+@@ -130,8 +163,11 @@ struct ota_ioctl_erase_arg {
+ 
+ static sysctl_boot_mode_e g_boot_mode = SYSCTL_BOOT_MAX;
+ static rt_device_t g_mmc_dev = RT_NULL;
++static rt_uint64_t g_storage_capacity;
+ static struct ota_toc g_ota_toc;
+ static rt_bool_t g_ota_toc_loaded;
++static struct rt_mutex g_ota_session_lock;
++static struct dfs_fd *g_ota_writer;
+ 
+ struct ota_kd_ctx {
+     rt_bool_t probing;        /* 正在探测 kdimg 头/分区表 */
+@@ -147,12 +183,14 @@ struct ota_kd_ctx {
+     rt_uint32_t ver_b;            /* 槽位 B 当前版本（来自 OTA meta 块） */
+     rt_uint32_t target_version;   /* OTA 完成后写回到对应槽位 meta 的版本号 */
+     rt_bool_t   version_updated;  /* 已经更新过槽位版本块 */
++    rt_bool_t   payload_verified; /* 三个 payload 已同步并完成回读校验 */
+ 
+     rt_uint64_t file_pos;     /* 当前写入到的文件偏移（用于保证顺序写） */
+-    rt_uint64_t need_end;     /* rtt/rtapp 内容区的最大结束偏移（仅用于调试） */
++    rt_uint64_t need_end;     /* rtt/rtapp/app 内容区的最大结束偏移 */
+ 
+     rt_uint64_t rtt_written;  /* 已写入 rtt 镜像的字节数 */
+     rt_uint64_t rtapp_written;/* 已写入 rtapp 镜像的字节数 */
++    rt_uint64_t app_written;  /* 已写入应用文件系统的字节数 */
+ 
+     /* header: 固定 512B */
+     rt_size_t   hdr_have;
+@@ -167,8 +205,10 @@ struct ota_kd_ctx {
+ 
+     const struct kd_img_part *part_rtt;
+     const struct kd_img_part *part_rtapp;
++    const struct kd_img_part *part_app;
+     struct ota_partition *dst_rtt;
+     struct ota_partition *dst_rtapp;
++    struct ota_partition *dst_app;
+ };
+ 
+ static struct ota_kd_ctx g_kdctx;
+@@ -180,6 +220,7 @@ static struct ota_partition *ota_find_partition(const char *name);
+ 
+ static rt_err_t ota_mmc_open_device(void)
+ {
++    struct rt_device_blk_geometry geometry;
+     char dev_name[8] = { 0 };
+     int mmc_id = -1;
+ 
+@@ -205,9 +246,33 @@ static rt_err_t ota_mmc_open_device(void)
+         return ret;
+     }
+ 
++    rt_memset(&geometry, 0, sizeof(geometry));
++    ret = rt_device_control(g_mmc_dev, RT_DEVICE_CTRL_BLK_GETGEOME,
++                            &geometry);
++    if (ret != RT_EOK || !geometry.bytes_per_sector ||
++        !geometry.sector_count ||
++        geometry.sector_count >
++            (~(rt_uint64_t)0 / geometry.bytes_per_sector)) {
++        LOG_E("ota: invalid geometry for %s", dev_name);
++        rt_device_close(g_mmc_dev);
++        g_mmc_dev = RT_NULL;
++        return -RT_ERROR;
++    }
++    g_storage_capacity =
++        geometry.sector_count * (rt_uint64_t)geometry.bytes_per_sector;
++    LOG_D("ota: %s capacity=0x%llx", dev_name,
++          (unsigned long long)g_storage_capacity);
++
+     return RT_EOK;
+ }
+ 
++static rt_bool_t ota_storage_range_valid(rt_uint64_t offset,
++                                         rt_uint64_t size)
++{
++    return size != 0 && offset < g_storage_capacity &&
++           size <= g_storage_capacity - offset;
++}
++
+ /* 比较两个定长摘要是否一致（常量时间实现，避免早退带来的时间侧信道） */
+ static rt_bool_t ota_digest_equal(const rt_uint8_t *a,
+                                   const rt_uint8_t *b,
+@@ -280,30 +345,35 @@ static rt_uint32_t ota_crc32(const void *data, rt_size_t len)
+     return res ^ 0xffffffffu;
+ }
+ 
+-static rt_uint64_t ota_meta_offset_for_slot(char slot)
++static rt_err_t ota_meta_offset_for_slot(char slot, rt_uint64_t *offset)
+ {
+     static struct ota_partition *meta_part;
+     rt_uint64_t span;
+ 
++    if (!offset || (slot != 'A' && slot != 'B'))
++        return -RT_EINVAL;
++
+     if (!meta_part) {
+         meta_part = ota_find_partition("ota_meta");
+         if (!meta_part) {
+             LOG_E("ota: no 'ota_meta' partition in TOC");
+-            return 0;
++            return -RT_ERROR;
+         }
+     }
+ 
+     /* 一个 ota_meta 分区中为 A/B 两个槽位平均划分空间 */
+-    if (!meta_part->size) {
+-        LOG_E("ota: ota_meta partition size is zero");
+-        return 0;
+-    }
+     span = meta_part->size / 2;
++    if (span < sizeof(struct ota_slot_meta) ||
++        !ota_storage_range_valid(meta_part->offset, meta_part->size)) {
++        LOG_E("ota: ota_meta partition cannot hold two metadata sectors");
++        return -RT_ERROR;
++    }
+ 
+-    if (slot == 'B')
+-        return meta_part->offset + span;
++    *offset = meta_part->offset + (slot == 'B' ? span : 0);
++    if (!ota_storage_range_valid(*offset, sizeof(struct ota_slot_meta)))
++        return -RT_ERROR;
+ 
+-    return meta_part->offset;
++    return RT_EOK;
+ }
+ 
+ static rt_err_t ota_meta_read_slot(char slot,
+@@ -323,16 +393,13 @@ static rt_err_t ota_meta_read_slot(char slot,
+ 
+     rt_memset(meta, 0, sizeof(*meta));
+ 
+-    off = ota_meta_offset_for_slot(slot);
+-    if (!off) {
+-        LOG_E("ota: meta offset for slot %c invalid (no ota_meta)", slot);
+-        return RT_EOK;
+-    }
++    ret = ota_meta_offset_for_slot(slot, &off);
++    if (ret != RT_EOK)
++        return ret;
+     ret = ota_storage_read(off, meta, sizeof(*meta));
+     if (ret != RT_EOK) {
+         LOG_E("ota: read meta slot %c failed, ret=%d", slot, ret);
+-        /* 读取失败视为没有有效版本，不作为致命错误 */
+-        return RT_EOK;
++        return ret;
+     }
+ 
+     if (meta->magic != OTA_META_MAGIC)
+@@ -354,36 +421,89 @@ static rt_err_t ota_meta_read_slot(char slot,
+     return RT_EOK;
+ }
+ 
+-static rt_err_t ota_meta_write_slot(char slot, rt_uint32_t new_ver)
++static rt_err_t ota_meta_write_slot(char slot, rt_uint32_t new_ver,
++                                    rt_uint32_t state)
+ {
+     struct ota_slot_meta meta;
++    struct ota_slot_meta verify;
+     rt_uint64_t off;
+     rt_err_t ret;
+ 
+     rt_memset(&meta, 0, sizeof(meta));
+     meta.magic = OTA_META_MAGIC;
+     meta.version = new_ver;
+-    meta.reserved = 0;
++    meta.reserved = state;
+     meta.crc32 = 0;
+ 
+     meta.crc32 = ota_crc32(&meta, sizeof(meta));
+ 
+-    off = ota_meta_offset_for_slot(slot);
+-    if (!off) {
+-        LOG_E("ota: meta offset for slot %c invalid (no ota_meta)", slot);
+-        return -RT_ERROR;
+-    }
++    ret = ota_meta_offset_for_slot(slot, &off);
++    if (ret != RT_EOK)
++        return ret;
+     ret = ota_storage_write(off, &meta, sizeof(meta));
+     if (ret != RT_EOK) {
+         LOG_E("ota: write meta slot %c failed, ret=%d", slot, ret);
+         return ret;
+     }
+ 
+-    LOG_D("ota: slot %c meta updated, version=0x%x", slot, new_ver);
++    ret = ota_storage_sync();
++    if (ret != RT_EOK) {
++        LOG_E("ota: sync meta slot %c failed, ret=%d", slot, ret);
++        return ret;
++    }
++
++    ret = ota_storage_read(off, &verify, sizeof(verify));
++    if (ret != RT_EOK ||
++        rt_memcmp(&meta, &verify, sizeof(meta)) != 0) {
++        LOG_E("ota: metadata readback failed for slot %c", slot);
++        return ret == RT_EOK ? -RT_ERROR : ret;
++    }
++
++    LOG_D("ota: slot %c meta updated, version=0x%x state=0x%x",
++          slot, new_ver, state);
+ 
+     return RT_EOK;
+ }
+ 
++static rt_bool_t ota_meta_is_pending(const struct ota_slot_meta *meta)
++{
++    return meta && (meta->reserved & OTA_META_PENDING) != 0;
++}
++
++static rt_bool_t ota_meta_is_exhausted(const struct ota_slot_meta *meta)
++{
++    return ota_meta_is_pending(meta) &&
++           (meta->reserved & OTA_META_ATTEMPTS_MASK) == 0;
++}
++
++static rt_bool_t ota_meta_is_healthy(const struct ota_slot_meta *meta,
++                                     rt_bool_t valid)
++{
++    return valid && !ota_meta_is_exhausted(meta);
++}
++
++static char ota_meta_select_slot(const struct ota_slot_meta *meta_a,
++                                 rt_bool_t valid_a,
++                                 const struct ota_slot_meta *meta_b,
++                                 rt_bool_t valid_b)
++{
++    rt_bool_t healthy_a = ota_meta_is_healthy(meta_a, valid_a);
++    rt_bool_t healthy_b = ota_meta_is_healthy(meta_b, valid_b);
++
++    /* Legacy factory images have no metadata and boot slot A. Once either
++     * slot has metadata, never select an invalid or attempts-exhausted slot. */
++    if (!valid_a && !valid_b)
++        return 'A';
++    if (healthy_a && !healthy_b)
++        return 'A';
++    if (!healthy_a && healthy_b)
++        return 'B';
++    if (!healthy_a && !healthy_b)
++        return 0;
++
++    return meta_a->version >= meta_b->version ? 'A' : 'B';
++}
++
+ static void ota_kdctx_reset(void)
+ {
+     if (g_kdctx.tbl_buf) {
+@@ -413,20 +533,27 @@ static rt_err_t ota_kd_parse_header(struct ota_kd_ctx *ctx)
+     saved_crc = hdr_view->img_hdr_crc32;
+     hdr_view->img_hdr_crc32 = 0;
+     crc = ota_crc32(hdr_view, sizeof(*hdr_view));
++    hdr_view->img_hdr_crc32 = saved_crc;
+     if (crc != saved_crc) {
+         LOG_E("ota: kdimg header crc mismatch: calc=0x%08x img=0x%08x",
+               crc, saved_crc);
+         return -RT_ERROR;
+     }
+ 
+-    if (!hdr_view->part_tbl_num) {
+-        LOG_E("ota: kdimg part_tbl_num is zero");
++    if (!hdr_view->part_tbl_num ||
++        hdr_view->part_tbl_num > KDIMG_MAX_PARTS) {
++        LOG_E("ota: invalid kdimg part_tbl_num: %u",
++              hdr_view->part_tbl_num);
+         return -RT_ERROR;
+     }
+ 
+     ctx->hdr = *hdr_view;
+     ctx->tbl_num = hdr_view->part_tbl_num;
+     ctx->tbl_total = (rt_size_t)ctx->tbl_num * KDIMG_PART_ENTRY_SIZE;
++    if (ctx->tbl_total > KDIMG_CONTENT_START_OFF - KDIMG_HDR_SIZE) {
++        LOG_E("ota: kdimg part table overlaps content area");
++        return -RT_ERROR;
++    }
+ 
+     ctx->tbl_buf = (rt_uint8_t *)rt_malloc(ctx->tbl_total);
+     if (!ctx->tbl_buf) {
+@@ -443,6 +570,17 @@ static rt_err_t ota_kd_parse_header(struct ota_kd_ctx *ctx)
+ 
+ static rt_err_t ota_kd_parse_part_table(struct ota_kd_ctx *ctx)
+ {
++    struct ota_partition *rtt_a;
++    struct ota_partition *rtt_b;
++    struct ota_partition *rtapp_a;
++    struct ota_partition *rtapp_b;
++    struct ota_partition *app_a;
++    struct ota_partition *app_b;
++    struct ota_slot_meta meta_a;
++    struct ota_slot_meta meta_b;
++    rt_bool_t valid_a = RT_FALSE;
++    rt_bool_t valid_b = RT_FALSE;
++    rt_uint32_t max_version;
+     rt_uint32_t crc;
+     rt_uint32_t i;
+ 
+@@ -455,17 +593,23 @@ static rt_err_t ota_kd_parse_part_table(struct ota_kd_ctx *ctx)
+ 
+     ctx->part_rtt = RT_NULL;
+     ctx->part_rtapp = RT_NULL;
++    ctx->part_app = RT_NULL;
+     ctx->dst_rtt = RT_NULL;
+     ctx->dst_rtapp = RT_NULL;
++    ctx->dst_app = RT_NULL;
+     ctx->ver_a = 0;
+     ctx->ver_b = 0;
+     ctx->target_version = 0;
+-    ctx->active_slot = 'A';
+-    ctx->target_slot = 'A';
++    ctx->active_slot = 0;
++    ctx->target_slot = 0;
+     ctx->version_updated = RT_FALSE;
++    ctx->payload_verified = RT_FALSE;
+ 
+     for (i = 0; i < ctx->tbl_num; i++) {
+         struct kd_img_part *p;
++        rt_uint64_t content_start;
++        rt_uint64_t content_end;
++        rt_uint32_t j;
+ 
+         p = (struct kd_img_part *)(ctx->tbl_buf +
+                                    (rt_size_t)i * KDIMG_PART_ENTRY_SIZE);
+@@ -476,111 +620,115 @@ static rt_err_t ota_kd_parse_part_table(struct ota_kd_ctx *ctx)
+             return -RT_ERROR;
+         }
+ 
+-        if (!rt_strncmp(p->part_name, "rtt", sizeof(p->part_name)))
+-            ctx->part_rtt = p;
+-        else if (!rt_strncmp(p->part_name, "rtapp", sizeof(p->part_name)))
+-            ctx->part_rtapp = p;
+-    }
+-
+-    if (ctx->part_rtt) {
+-        struct ota_partition *rtt_a;
+-        struct ota_partition *rtt_b;
+-        struct ota_partition *rtapp_a;
+-        struct ota_partition *rtapp_b;
+-        struct ota_slot_meta meta_a;
+-        struct ota_slot_meta meta_b;
+-        rt_bool_t valid_a = RT_FALSE;
+-        rt_bool_t valid_b = RT_FALSE;
+-
+-        rtt_a = ota_find_partition("rtt_a");
+-        rtt_b = ota_find_partition("rtt_b");
+-        rtapp_a = ota_find_partition("rtapp_a");
+-        rtapp_b = ota_find_partition("rtapp_b");
+-
+-        if (!rtt_a && !rtt_b) {
+-            LOG_E("ota: no 'rtt_a' or 'rtt_b' partition in TOC");
++        if (!p->part_name[0] ||
++            rt_strnlen(p->part_name, sizeof(p->part_name)) ==
++            sizeof(p->part_name)) {
++            LOG_E("ota: kdimg part[%u] name is not terminated", i);
++            return -RT_ERROR;
++        }
++        if (!p->part_content_size ||
++            p->part_content_offset < KDIMG_CONTENT_START_OFF ||
++            (p->part_max_size &&
++             p->part_content_size > p->part_max_size)) {
++            LOG_E("ota: invalid kdimg content range for part %.32s",
++                  p->part_name);
+             return -RT_ERROR;
+         }
+ 
+-        ota_meta_read_slot('A', &meta_a, &valid_a);
+-        ota_meta_read_slot('B', &meta_b, &valid_b);
++        content_start = p->part_content_offset;
++        content_end = content_start + p->part_content_size;
+ 
+-        ctx->ver_a = valid_a ? meta_a.version : 0;
+-        ctx->ver_b = valid_b ? meta_b.version : 0;
++        for (j = 0; j < i; j++) {
++            const struct kd_img_part *other =
++                (const struct kd_img_part *)(ctx->tbl_buf +
++                    (rt_size_t)j * KDIMG_PART_ENTRY_SIZE);
++            rt_uint64_t other_start = other->part_content_offset;
++            rt_uint64_t other_end = other_start +
++                                    other->part_content_size;
+ 
+-        if (ctx->ver_a == ctx->ver_b) {
+-            ctx->active_slot = 'A';
+-            ctx->target_slot = 'B';
+-        } else if (ctx->ver_a > ctx->ver_b) {
+-            ctx->active_slot = 'A';
+-            ctx->target_slot = 'B';
+-        } else {
+-            ctx->active_slot = 'B';
+-            ctx->target_slot = 'A';
++            if (rt_strncmp(p->part_name, other->part_name,
++                           sizeof(p->part_name)) == 0) {
++                LOG_E("ota: duplicate kdimg part %.32s", p->part_name);
++                return -RT_ERROR;
++            }
++            if (content_start < other_end && other_start < content_end) {
++                LOG_E("ota: overlapping kdimg payloads %.32s and %.32s",
++                      p->part_name, other->part_name);
++                return -RT_ERROR;
++            }
+         }
+ 
+-        if ((ctx->ver_a > ctx->ver_b ?
+-             (ctx->ver_a - ctx->ver_b) :
+-             (ctx->ver_b - ctx->ver_a)) > 1) {
+-            LOG_E("ota: slot version gap too large: A=0x%x B=0x%x",
+-                  ctx->ver_a, ctx->ver_b);
+-        }
++        if (!rt_strncmp(p->part_name, "rtt", sizeof(p->part_name)))
++            ctx->part_rtt = p;
++        else if (!rt_strncmp(p->part_name, "rtapp", sizeof(p->part_name)))
++            ctx->part_rtapp = p;
++        else if (!rt_strncmp(p->part_name, "app", sizeof(p->part_name)))
++            ctx->part_app = p;
++    }
+ 
+-        ctx->target_version =
+-            (ctx->ver_a > ctx->ver_b ? ctx->ver_a : ctx->ver_b) + 1;
++    /* A trial slot is only made bootable when every boot/UI component is
++     * supplied by the same package. */
++    if (!ctx->part_rtt || !ctx->part_rtapp || !ctx->part_app) {
++        LOG_E("ota: full-system package requires rtt, rtapp and app");
++        return -RT_ERROR;
++    }
+ 
+-        if (ctx->target_slot == 'A') {
+-            ctx->dst_rtt = rtt_a;
+-            ctx->dst_rtapp = rtapp_a;
+-        } else {
+-            ctx->dst_rtt = rtt_b;
+-            ctx->dst_rtapp = rtapp_b;
+-        }
++    rtt_a = ota_find_partition("rtt_a");
++    rtt_b = ota_find_partition("rtt_b");
++    rtapp_a = ota_find_partition("rtapp_a");
++    rtapp_b = ota_find_partition("rtapp_b");
++    app_a = ota_find_partition("app_a");
++    app_b = ota_find_partition("app_b");
++    if (!rtt_a || !rtt_b || !rtapp_a || !rtapp_b || !app_a || !app_b ||
++        !ota_find_partition("ota_meta")) {
++        LOG_E("ota: incomplete rtt/rtapp/app A/B layout in TOC");
++        return -RT_ERROR;
++    }
+ 
+-        if (!ctx->dst_rtt) {
+-            LOG_E("ota: target slot %c has no rtt partition",
+-                  ctx->target_slot);
+-            return -RT_ERROR;
+-        }
++    if (ota_meta_read_slot('A', &meta_a, &valid_a) != RT_EOK ||
++        ota_meta_read_slot('B', &meta_b, &valid_b) != RT_EOK)
++        return -RT_ERROR;
+ 
+-        if (ctx->dst_rtt->size &&
+-            (rt_uint64_t)ctx->part_rtt->part_content_size >
+-            ctx->dst_rtt->size) {
+-            LOG_E("ota: rtt content too large: 0x%x > 0x%lx",
+-                  ctx->part_rtt->part_content_size,
+-                  (unsigned long long)ctx->dst_rtt->size);
+-            return -RT_ERROR;
+-        }
++    ctx->ver_a = valid_a ? meta_a.version : 0;
++    ctx->ver_b = valid_b ? meta_b.version : 0;
++    ctx->active_slot = k230_atag_get_ota_slot();
++    if (ctx->active_slot != 'A' && ctx->active_slot != 'B')
++        ctx->active_slot = ota_meta_select_slot(&meta_a, valid_a,
++                                                &meta_b, valid_b);
++    if (ctx->active_slot != 'A' && ctx->active_slot != 'B') {
++        LOG_E("ota: no healthy active slot; refusing update");
++        return -RT_ERROR;
++    }
++    ctx->target_slot = ctx->active_slot == 'A' ? 'B' : 'A';
+ 
+-        if (ctx->part_rtt->part_content_offset < KDIMG_CONTENT_START_OFF) {
+-            LOG_E("ota: rtt content_offset too small: 0x%x",
+-                  ctx->part_rtt->part_content_offset);
+-            return -RT_ERROR;
+-        }
++    max_version = ctx->ver_a > ctx->ver_b ? ctx->ver_a : ctx->ver_b;
++    if (max_version == ~(rt_uint32_t)0) {
++        LOG_E("ota: slot version counter exhausted");
++        return -RT_ERROR;
++    }
++    ctx->target_version = max_version + 1;
+ 
+-        LOG_D("ota: OTA target slot=%c, new version=0x%x",
+-              ctx->target_slot, ctx->target_version);
++    if (ctx->target_slot == 'A') {
++        ctx->dst_rtt = rtt_a;
++        ctx->dst_rtapp = rtapp_a;
++        ctx->dst_app = app_a;
++    } else {
++        ctx->dst_rtt = rtt_b;
++        ctx->dst_rtapp = rtapp_b;
++        ctx->dst_app = app_b;
+     }
+ 
+-    if (ctx->part_rtapp) {
+-        if (!ctx->dst_rtapp) {
+-            LOG_E("ota: no target rtapp partition in TOC");
+-            ctx->part_rtapp = RT_NULL;
+-        } else if (ctx->dst_rtapp->size &&
+-                   (rt_uint64_t)ctx->part_rtapp->part_content_size >
+-                   ctx->dst_rtapp->size) {
+-            LOG_E("ota: rtapp content too large: 0x%x > 0x%lx",
+-                  ctx->part_rtapp->part_content_size,
+-                  (unsigned long long)ctx->dst_rtapp->size);
+-            return -RT_ERROR;
+-        } else if (ctx->part_rtapp->part_content_offset <
+-                   KDIMG_CONTENT_START_OFF) {
+-            LOG_E("ota: rtapp content_offset too small: 0x%x",
+-                  ctx->part_rtapp->part_content_offset);
+-            return -RT_ERROR;
+-        }
++    if ((rt_uint64_t)ctx->part_rtt->part_content_size > ctx->dst_rtt->size ||
++        (rt_uint64_t)ctx->part_rtapp->part_content_size >
++            ctx->dst_rtapp->size ||
++        (rt_uint64_t)ctx->part_app->part_content_size > ctx->dst_app->size) {
++        LOG_E("ota: package payload exceeds target slot capacity");
++        return -RT_ERROR;
+     }
+ 
++    LOG_I("ota: active slot=%c target slot=%c version=0x%x",
++          ctx->active_slot, ctx->target_slot, ctx->target_version);
++
+     ctx->need_end = 0;
+     if (ctx->part_rtt) {
+         rt_uint64_t end;
+@@ -608,6 +756,19 @@ static rt_err_t ota_kd_parse_part_table(struct ota_kd_ctx *ctx)
+               ctx->part_rtapp->part_content_size);
+     }
+ 
++    if (ctx->part_app) {
++        rt_uint64_t end;
++
++        end = (rt_uint64_t)ctx->part_app->part_content_offset +
++            ctx->part_app->part_content_size;
++        if (end > ctx->need_end)
++            ctx->need_end = end;
++
++        LOG_D("ota: app part: content_off=0x%x size=0x%x",
++              ctx->part_app->part_content_offset,
++              ctx->part_app->part_content_size);
++    }
++
+     ctx->table_done = RT_TRUE;
+     ctx->is_kdimg = RT_TRUE;
+     ctx->probing = RT_FALSE;
+@@ -656,7 +817,7 @@ static rt_err_t ota_verify_part_sha256(const char *name,
+ 
+         ret = ota_storage_read(off, buf, chunk);
+         if (ret != RT_EOK) {
+-            LOG_E("ota: readback %s failed at off=0x%lx len=0x%lx, ret=%d",
++            LOG_E("ota: readback %s failed at off=0x%llx len=0x%llx, ret=%d",
+                   name,
+                   (unsigned long long)off,
+                   (unsigned long long)chunk,
+@@ -725,7 +886,7 @@ static rt_err_t ota_kd_write_part(const char *name,
+ 
+     ret = ota_storage_write(flash_off, buf + buf_off, (rt_size_t)len);
+     if (ret != RT_EOK) {
+-        LOG_E("ota: write part '%s' failed at off=0x%lx len=0x%lx, ret=%d",
++        LOG_E("ota: write part '%s' failed at off=0x%llx len=0x%llx, ret=%d",
+               name,
+               (unsigned long long)flash_off,
+               (unsigned long long)len, ret);
+@@ -736,7 +897,7 @@ static rt_err_t ota_kd_write_part(const char *name,
+         *written += len;
+ 
+     if (written && *written == part->part_content_size) {
+-        LOG_D("ota: %s updated: off=0x%lx len=0x%x",
++        LOG_D("ota: %s updated: off=0x%llx len=0x%x",
+               name,
+               (unsigned long long)dst->offset,
+               part->part_content_size);
+@@ -826,10 +987,14 @@ static rt_err_t ota_kd_stream_write(struct ota_kd_ctx *ctx,
+     if (!ctx->is_kdimg)
+         return RT_EOK;
+ 
+-    /* 4. 剩余部分（若有）属于内容区，按 rtt/rtapp 分区表流式写入 */
++    /* 4. 剩余部分按 rtt/rtapp/app 分区表流式写入 */
+     if (left) {
+         rt_uint64_t start = pos;
+-        rt_uint64_t end   = pos + left;
++        rt_uint64_t end;
++
++        if ((rt_uint64_t)left > ~(rt_uint64_t)0 - pos)
++            return -RT_EINVAL;
++        end = pos + left;
+ 
+         if (ctx->part_rtt && ctx->dst_rtt) {
+             ret = ota_kd_write_part("rtt", ctx->dst_rtt, ctx->part_rtt,
+@@ -845,41 +1010,42 @@ static rt_err_t ota_kd_stream_write(struct ota_kd_ctx *ctx,
+             if (ret != RT_EOK)
+                 return ret;
+         }
++
++        if (ctx->part_app && ctx->dst_app) {
++            ret = ota_kd_write_part("app", ctx->dst_app, ctx->part_app,
++                                    start, end, p, &ctx->app_written);
++            if (ret != RT_EOK)
++                return ret;
++        }
+     }
+ 
+-    /*
+-     * 当本次 OTA 目标槽位的 rtt/rtapp 都写完后，更新对应槽位的版本块。
+-     * 这里允许 rtapp 可选：若 kdimage 中没有 rtapp，则仅以 rtt 完成为准。
+-     */
+-    if (ctx->is_kdimg && !ctx->version_updated && ctx->part_rtt &&
+-        ctx->dst_rtt &&
+-        ctx->rtt_written == ctx->part_rtt->part_content_size) {
+-        if (!ctx->part_rtapp || !ctx->dst_rtapp ||
+-            ctx->rtapp_written == ctx->part_rtapp->part_content_size) {
+-            /* 先对 rtt/rtapp 做回读 + SHA256 校验，确保写入真实可靠 */
+-            if (ctx->part_rtt && ctx->dst_rtt) {
+-                ret = ota_verify_part_sha256("rtt",
+-                                             ctx->dst_rtt,
+-                                             ctx->part_rtt);
+-                if (ret != RT_EOK)
+-                    return ret;
+-            }
++    /* Metadata activation is deliberately deferred until the owning file is
++     * closed normally. An incomplete close or ABORT therefore cannot expose a
++     * partially written slot to U-Boot. */
++    if (!ctx->payload_verified &&
++        ctx->rtt_written == ctx->part_rtt->part_content_size &&
++        ctx->rtapp_written == ctx->part_rtapp->part_content_size &&
++        ctx->app_written == ctx->part_app->part_content_size) {
++        ret = ota_storage_sync();
++        if (ret != RT_EOK) {
++            LOG_E("ota: storage sync before verify failed, ret=%d", ret);
++            return ret;
++        }
+ 
+-            if (ctx->part_rtapp && ctx->dst_rtapp) {
+-                ret = ota_verify_part_sha256("rtapp",
+-                                             ctx->dst_rtapp,
+-                                             ctx->part_rtapp);
+-                if (ret != RT_EOK)
+-                    return ret;
+-            }
++        ret = ota_verify_part_sha256("rtt", ctx->dst_rtt, ctx->part_rtt);
++        if (ret != RT_EOK)
++            return ret;
++        ret = ota_verify_part_sha256("rtapp", ctx->dst_rtapp,
++                                     ctx->part_rtapp);
++        if (ret != RT_EOK)
++            return ret;
++        ret = ota_verify_part_sha256("app", ctx->dst_app, ctx->part_app);
++        if (ret != RT_EOK)
++            return ret;
+ 
+-            ret = ota_meta_write_slot(ctx->target_slot,
+-                                      ctx->target_version);
+-            if (ret == RT_EOK)
+-                ctx->version_updated = RT_TRUE;
+-            else
+-                return ret;
+-        }
++        ctx->payload_verified = RT_TRUE;
++        LOG_I("ota: slot %c payload verified; awaiting normal close",
++              ctx->target_slot);
+     }
+ 
+     return RT_EOK;
+@@ -910,6 +1076,12 @@ static rt_err_t ota_mmc_rw(rt_bool_t is_write,
+     if (!len)
+         return RT_EOK;
+ 
++    if (!buffer || !ota_storage_range_valid(offset, len)) {
++        LOG_E("ota: mmc range outside device: off=0x%llx len=0x%llx",
++              (unsigned long long)offset, (unsigned long long)len);
++        return -RT_EINVAL;
++    }
++
+     cur_off = offset;
+ 
+     /* 完全对齐的简单路径：直接整扇区访问 */
+@@ -1024,9 +1196,7 @@ static rt_err_t ota_mmc_rw(rt_bool_t is_write,
+ 
+ static rt_err_t ota_mmc_erase(rt_uint64_t offset, rt_uint64_t size)
+ {
+-    (void)offset;
+-    (void)size;
+-    return RT_EOK;
++    return ota_storage_range_valid(offset, size) ? RT_EOK : -RT_EINVAL;
+ }
+ 
+ static rt_err_t ota_nand_rw(rt_bool_t is_write,
+@@ -1048,6 +1218,58 @@ static rt_err_t ota_nand_erase(rt_uint64_t offset, rt_uint64_t size)
+     return -RT_ENOSYS;
+ }
+ 
++static rt_err_t ota_toc_validate(void)
++{
++    const rt_uint64_t toc_end =
++        K230_TOC_OFFSET + sizeof(g_ota_toc.entries);
++    rt_size_t i;
++    rt_size_t j;
++
++    for (i = 0; i < g_ota_toc.entry_count; i++) {
++        const struct ota_partition *entry = &g_ota_toc.entries[i];
++        rt_uint64_t end;
++
++        if (rt_strnlen(entry->name, sizeof(entry->name)) ==
++            sizeof(entry->name)) {
++            LOG_E("ota: TOC entry %u name is not terminated", (unsigned)i);
++            return -RT_ERROR;
++        }
++        if (!entry->offset ||
++            !ota_storage_range_valid(entry->offset, entry->size)) {
++            LOG_E("ota: invalid TOC range %.32s: off=0x%llx size=0x%llx",
++                  entry->name,
++                  (unsigned long long)entry->offset,
++                  (unsigned long long)entry->size);
++            return -RT_ERROR;
++        }
++
++        end = entry->offset + entry->size;
++        if (entry->offset < toc_end && K230_TOC_OFFSET < end) {
++            LOG_E("ota: TOC entry %.32s overlaps the TOC itself",
++                  entry->name);
++            return -RT_ERROR;
++        }
++
++        for (j = 0; j < i; j++) {
++            const struct ota_partition *other = &g_ota_toc.entries[j];
++            rt_uint64_t other_end = other->offset + other->size;
++
++            if (rt_strncmp(entry->name, other->name,
++                           sizeof(entry->name)) == 0) {
++                LOG_E("ota: duplicate TOC entry %.32s", entry->name);
++                return -RT_ERROR;
++            }
++            if (entry->offset < other_end && other->offset < end) {
++                LOG_E("ota: overlapping TOC ranges %.32s and %.32s",
++                      entry->name, other->name);
++                return -RT_ERROR;
++            }
++        }
++    }
++
++    return RT_EOK;
++}
++
+ static rt_err_t ota_toc_load(void)
+ {
+     rt_err_t ret;
+@@ -1064,6 +1286,12 @@ static rt_err_t ota_toc_load(void)
+ 
+     rt_memset(&g_ota_toc, 0, sizeof(g_ota_toc));
+ 
++    if (!ota_storage_range_valid(K230_TOC_OFFSET,
++                                 sizeof(g_ota_toc.entries))) {
++        LOG_E("ota: TOC lies outside the boot device");
++        return -RT_ERROR;
++    }
++
+     ret = ota_storage_read(K230_TOC_OFFSET,
+                            g_ota_toc.entries,
+                            sizeof(g_ota_toc.entries));
+@@ -1081,11 +1309,30 @@ static rt_err_t ota_toc_load(void)
+         g_ota_toc.entry_count++;
+     }
+ 
++    /* A zero entry terminates the table; non-zero data after it is ambiguous
++     * and therefore rejected rather than silently ignored. */
++    for (; i < K230_TOC_MAX_ENTRIES; i++) {
++        const rt_uint8_t *raw =
++            (const rt_uint8_t *)&g_ota_toc.entries[i];
++        rt_size_t j;
++
++        for (j = 0; j < sizeof(g_ota_toc.entries[i]); j++) {
++            if (raw[j] != 0) {
++                LOG_E("ota: non-zero TOC data after terminator");
++                return -RT_ERROR;
++            }
++        }
++    }
++
+     if (!g_ota_toc.entry_count) {
+         LOG_E("ota: TOC is empty");
+         return -RT_ERROR;
+     }
+ 
++    ret = ota_toc_validate();
++    if (ret != RT_EOK)
++        return ret;
++
+     g_ota_toc_loaded = RT_TRUE;
+ 
+     LOG_D("ota: TOC loaded, entries=%u", g_ota_toc.entry_count);
+@@ -1169,6 +1416,22 @@ rt_err_t ota_storage_write(rt_uint64_t offset, const void *buf, rt_size_t len)
+     }
+ }
+ 
++rt_err_t ota_storage_sync(void)
++{
++    switch (g_boot_mode) {
++    case SYSCTL_BOOT_EMMC:
++    case SYSCTL_BOOT_SDCARD:
++        if (!g_mmc_dev)
++            return -RT_ERROR;
++        return rt_device_control(g_mmc_dev, RT_DEVICE_CTRL_BLK_SYNC, RT_NULL);
++    case SYSCTL_BOOT_NANDFLASH:
++    case SYSCTL_BOOT_NORFLASH:
++        return -RT_ENOSYS;
++    default:
++        return -RT_ERROR;
++    }
++}
++
+ rt_err_t ota_storage_erase(rt_uint64_t offset, rt_uint64_t size)
+ {
+     switch (g_boot_mode) {
+@@ -1187,9 +1450,6 @@ rt_err_t ota_storage_erase(rt_uint64_t offset, rt_uint64_t size)
+ static rt_err_t ota_dev_init(rt_device_t dev)
+ {
+     (void)dev;
+-
+-    ota_kdctx_reset();
+-
+     return ota_storage_init();
+ }
+ 
+@@ -1197,52 +1457,141 @@ static rt_err_t ota_dev_open(rt_device_t dev, rt_uint16_t oflag)
+ {
+     (void)dev;
+     (void)oflag;
+-
+-    ota_kdctx_reset();
+-
+     return RT_EOK;
+ }
+ 
+ static rt_err_t ota_dev_close(rt_device_t dev)
+ {
+     (void)dev;
++    return RT_EOK;
++}
++
++static rt_err_t ota_commit_update_locked(void)
++{
++    rt_err_t ret;
++
++    if (g_kdctx.invalid || !g_kdctx.payload_verified ||
++        g_kdctx.file_pos < g_kdctx.need_end) {
++        LOG_E("ota: incomplete update aborted at close");
++        return -RT_ERROR;
++    }
++
++    ret = ota_meta_write_slot(
++        g_kdctx.target_slot, g_kdctx.target_version,
++        OTA_META_PENDING | OTA_META_TRIAL_ATTEMPTS);
++    if (ret == RT_EOK) {
++        g_kdctx.version_updated = RT_TRUE;
++        LOG_I("ota: slot %c activated for trial boot",
++              g_kdctx.target_slot);
++    }
++
++    return ret;
++}
++
++#ifdef RT_USING_POSIX
++static int ota_fops_open(struct dfs_fd *fd)
++{
++    rt_device_t device;
++    int access;
++    rt_err_t ret;
++
++    if (!fd || !fd->fnode)
++        return -EINVAL;
++
++    device = (rt_device_t)fd->fnode->data;
++    if (!device)
++        return -ENODEV;
++
++    ret = rt_device_open(device, RT_DEVICE_OFLAG_RDWR);
++    if (ret != RT_EOK)
++        return -EIO;
++
++    access = fd->flags & O_ACCMODE;
++    if (access != O_WRONLY && access != O_RDWR)
++        return 0;
++
++    ret = rt_mutex_take(&g_ota_session_lock, RT_WAITING_FOREVER);
++    if (ret != RT_EOK) {
++        rt_device_close(device);
++        return -EIO;
++    }
++
++    if (g_ota_writer) {
++        rt_mutex_release(&g_ota_session_lock);
++        rt_device_close(device);
++        return -EBUSY;
++    }
+ 
+     ota_kdctx_reset();
++    fd->pos = 0;
++    g_ota_writer = fd;
++    rt_mutex_release(&g_ota_session_lock);
++    return 0;
++}
+ 
+-    return RT_EOK;
++static int ota_fops_close(struct dfs_fd *fd)
++{
++    rt_device_t device;
++    rt_err_t commit_ret = RT_EOK;
++
++    if (!fd || !fd->fnode)
++        return -EINVAL;
++
++    device = (rt_device_t)fd->fnode->data;
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return -EIO;
++
++    if (g_ota_writer == fd) {
++        if (g_kdctx.payload_verified && !g_kdctx.invalid)
++            commit_ret = ota_commit_update_locked();
++        else {
++            LOG_I("ota: closing incomplete session; target remains inactive");
++            commit_ret = -RT_ERROR;
++        }
++
++        g_ota_writer = RT_NULL;
++        ota_kdctx_reset();
++    }
++    rt_mutex_release(&g_ota_session_lock);
++
++    if (device)
++        rt_device_close(device);
++    return commit_ret == RT_EOK ? 0 : -EIO;
+ }
+ 
+-static rt_size_t ota_dev_read(rt_device_t dev, rt_off_t pos,
+-                              void *buffer, rt_size_t size)
++static int ota_fops_read(struct dfs_fd *fd, void *buffer, size_t size)
+ {
+-    (void)dev;
+-    (void)pos;
++    (void)fd;
+     (void)buffer;
+     (void)size;
+-
+     return 0;
+ }
+ 
+-static rt_size_t ota_dev_write(rt_device_t dev, rt_off_t pos,
+-                               const void *buffer, rt_size_t size)
++static int ota_fops_write(struct dfs_fd *fd, const void *buffer, size_t size)
+ {
+     rt_err_t ret;
+ 
+-    (void)dev;
++    if (!fd || !buffer || !size || size > 0x7fffffffu)
++        return -EINVAL;
+ 
+-    if (!buffer || !size)
+-        return -1;
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return -EIO;
+ 
+-    if (g_kdctx.invalid)
+-        return -1;
++    if (g_ota_writer != fd || g_kdctx.invalid) {
++        rt_mutex_release(&g_ota_session_lock);
++        return -EPERM;
++    }
+ 
+-    /* 目前仅支持从 offset=0 开始的顺序写入 */
+-    if ((rt_uint64_t)pos != g_kdctx.file_pos) {
+-        LOG_E("ota: non-sequential write, pos=0x%lx expected=0x%lx",
+-              (unsigned long)pos,
+-              (unsigned long)g_kdctx.file_pos);
++    if (fd->pos < 0 || (rt_uint64_t)fd->pos != g_kdctx.file_pos ||
++        (rt_uint64_t)size > ~(rt_uint64_t)0 - g_kdctx.file_pos) {
++        LOG_E("ota: non-sequential write, pos=0x%lx expected=0x%llx",
++              (unsigned long)fd->pos,
++              (unsigned long long)g_kdctx.file_pos);
+         g_kdctx.invalid = RT_TRUE;
+-        return -1;
++        rt_mutex_release(&g_ota_session_lock);
++        return -EINVAL;
+     }
+ 
+     ret = ota_kd_stream_write(&g_kdctx,
+@@ -1250,55 +1599,245 @@ static rt_size_t ota_dev_write(rt_device_t dev, rt_off_t pos,
+     if (ret != RT_EOK) {
+         LOG_E("ota: kdimage stream write failed, ret=%d", ret);
+         g_kdctx.invalid = RT_TRUE;
+-        return -1;
++        rt_mutex_release(&g_ota_session_lock);
++        return -EIO;
+     }
+ 
+     g_kdctx.file_pos += size;
++    fd->pos += size;
++    rt_mutex_release(&g_ota_session_lock);
+ 
+-    return size;
++    return (int)size;
+ }
+ 
++static int ota_fops_flush(struct dfs_fd *fd)
++{
++    rt_err_t ret;
++
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return -EIO;
++    ret = g_ota_writer == fd ? ota_storage_sync() : RT_EOK;
++    rt_mutex_release(&g_ota_session_lock);
++    return ret == RT_EOK ? 0 : -EIO;
++}
++
++static int ota_fops_lseek(struct dfs_fd *fd, off_t offset)
++{
++    int ret = -EINVAL;
++
++    if (!fd || offset < 0)
++        return -EINVAL;
++
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return -EIO;
++
++    if (g_ota_writer != fd) {
++        if (offset == 0)
++            ret = 0;
++    } else if ((rt_uint64_t)offset == g_kdctx.file_pos) {
++        ret = (int)offset;
++    }
++
++    rt_mutex_release(&g_ota_session_lock);
++    return ret;
++}
++
++static int ota_fops_ioctl(struct dfs_fd *fd, int cmd, void *args)
++{
++    struct ota_slot_meta meta_a;
++    struct ota_slot_meta meta_b;
++    rt_bool_t valid_a = RT_FALSE;
++    rt_bool_t valid_b = RT_FALSE;
++    char active;
++    rt_err_t ret = RT_EOK;
++
++    if (!fd)
++        return -EINVAL;
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return -EIO;
++
++    if (cmd == K230_OTA_IOCTL_ABORT_UPDATE) {
++        if (g_ota_writer != fd) {
++            ret = -RT_EINVAL;
++        } else {
++            LOG_I("ota: update session explicitly aborted");
++            g_ota_writer = RT_NULL;
++            ota_kdctx_reset();
++        }
++        goto out;
++    }
++
++    ret = ota_meta_read_slot('A', &meta_a, &valid_a);
++    if (ret != RT_EOK)
++        goto out;
++    ret = ota_meta_read_slot('B', &meta_b, &valid_b);
++    if (ret != RT_EOK)
++        goto out;
++
++    active = k230_atag_get_ota_slot();
++    if (active != 'A' && active != 'B')
++        active = ota_meta_select_slot(&meta_a, valid_a, &meta_b, valid_b);
++
++    switch (cmd) {
++    case K230_OTA_IOCTL_CONFIRM_BOOT:
++    {
++        struct ota_slot_meta *meta;
++        rt_bool_t valid;
++
++        if (active != 'A' && active != 'B') {
++            ret = -RT_ERROR;
++            break;
++        }
++        meta = active == 'A' ? &meta_a : &meta_b;
++        valid = active == 'A' ? valid_a : valid_b;
++        if (!valid) {
++            LOG_I("ota: initializing healthy metadata for slot %c", active);
++            ret = ota_meta_write_slot(active, 0, 0);
++        } else if (ota_meta_is_pending(meta)) {
++            LOG_I("ota: confirming healthy slot %c version=0x%x",
++                  active, meta->version);
++            ret = ota_meta_write_slot(active, meta->version, 0);
++        }
++        break;
++    }
++
++    case K230_OTA_IOCTL_GET_STATUS:
++    {
++        struct ota_user_status status;
++
++        if (!args) {
++            ret = -RT_EINVAL;
++            break;
++        }
++        rt_memset(&status, 0, sizeof(status));
++        status.version_a = valid_a ? meta_a.version : 0;
++        status.version_b = valid_b ? meta_b.version : 0;
++        status.valid_a = valid_a;
++        status.valid_b = valid_b;
++        status.pending_a = valid_a && ota_meta_is_pending(&meta_a);
++        status.pending_b = valid_b && ota_meta_is_pending(&meta_b);
++        status.attempts_a = valid_a ?
++            (meta_a.reserved & OTA_META_ATTEMPTS_MASK) : 0;
++        status.attempts_b = valid_b ?
++            (meta_b.reserved & OTA_META_ATTEMPTS_MASK) : 0;
++        status.active_slot = active;
++#if defined(RT_USING_LWP) && defined(RT_USING_USERSPACE)
++        ret = lwp_put_to_user_ex(args, &status, sizeof(status)) == 0 ?
++            RT_EOK : -RT_ERROR;
++#else
++        rt_memcpy(args, &status, sizeof(status));
++#endif
++        break;
++    }
++
++    default:
++        ret = -RT_ENOSYS;
++        break;
++    }
++
++out:
++    rt_mutex_release(&g_ota_session_lock);
++    return ret == RT_EOK ? 0 : -EIO;
++}
++
++static const struct dfs_file_ops ota_fops = {
++    .open = ota_fops_open,
++    .close = ota_fops_close,
++    .ioctl = ota_fops_ioctl,
++    .read = ota_fops_read,
++    .write = ota_fops_write,
++    .flush = ota_fops_flush,
++    .lseek = ota_fops_lseek,
++};
++#endif
++
+ #ifdef RT_USING_DEVICE_OPS
+ static const struct rt_device_ops ota_dev_ops = {
+     ota_dev_init,
+     ota_dev_open,
+     ota_dev_close,
+-    ota_dev_read,
+-    ota_dev_write,
++    RT_NULL,
++    RT_NULL,
+     RT_NULL
+ };
+ #endif
+ 
+ static struct rt_device g_ota_device;
+ 
++static void ota_trial_boot_guard(void *parameter)
++{
++    struct ota_slot_meta meta;
++    rt_bool_t valid = RT_FALSE;
++    char active;
++
++    (void)parameter;
++    rt_thread_mdelay(K230_OTA_TRIAL_GUARD_MS);
++
++    if (rt_mutex_take(&g_ota_session_lock,
++                      RT_WAITING_FOREVER) != RT_EOK)
++        return;
++    active = k230_atag_get_ota_slot();
++    if ((active != 'A' && active != 'B') ||
++        ota_meta_read_slot(active, &meta, &valid) != RT_EOK || !valid ||
++        !ota_meta_is_pending(&meta)) {
++        rt_mutex_release(&g_ota_session_lock);
++        return;
++    }
++    rt_mutex_release(&g_ota_session_lock);
++
++    LOG_E("ota: slot %c was not confirmed healthy; rebooting for rollback",
++          active);
++    extern void rt_hw_cpu_reset(void);
++    rt_hw_cpu_reset();
++}
++
+ static int rt_hw_ota_register(void)
+ {
+     rt_err_t ret;
++    rt_thread_t guard;
+     struct rt_device *device = &g_ota_device;
+ 
+     rt_memset(device, 0, sizeof(*device));
++    ret = rt_mutex_init(&g_ota_session_lock, "ota_lock", RT_IPC_FLAG_PRIO);
++    if (ret != RT_EOK)
++        return ret;
+ 
+     device->type = RT_Device_Class_Char;
+     device->rx_indicate = RT_NULL;
+     device->tx_complete = RT_NULL;
+ 
++#ifdef RT_USING_POSIX
++    device->fops = &ota_fops;
++#endif
++
+ #ifdef RT_USING_DEVICE_OPS
+     device->ops = &ota_dev_ops;
+ #else
+     device->init = ota_dev_init;
+     device->open = ota_dev_open;
+     device->close = ota_dev_close;
+-    device->read = ota_dev_read;
+-    device->write = ota_dev_write;
++    device->read = RT_NULL;
++    device->write = RT_NULL;
+     device->control = RT_NULL;
+ #endif
+ 
+     ret = rt_device_register(device, "ota", RT_DEVICE_FLAG_RDWR);
+     if (ret != RT_EOK) {
+         LOG_E("ota: device_register failed: %d", ret);
++        rt_mutex_detach(&g_ota_session_lock);
+         return ret;
+     }
+ 
++    guard = rt_thread_create("ota_guard", ota_trial_boot_guard, RT_NULL,
++                             4096, 22, 20);
++    if (guard)
++        rt_thread_startup(guard);
++    else
++        LOG_E("ota: cannot start trial-boot rollback guard");
++
+     return RT_EOK;
+ }
+ INIT_DEVICE_EXPORT(rt_hw_ota_register);

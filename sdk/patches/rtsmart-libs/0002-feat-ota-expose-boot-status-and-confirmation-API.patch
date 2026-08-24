@@ -1,0 +1,116 @@
+From 11bec690a4614b1d27b9a46358d93ab443dad155 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:06:08 -0400
+Subject: [PATCH 2/5] feat(ota): expose boot status and confirmation API
+
+---
+ rtsmart_hal/components/k230_ota/k230_ota.c | 41 ++++++++++++++++++++++
+ rtsmart_hal/components/k230_ota/k230_ota.h | 21 +++++++++++
+ 2 files changed, 62 insertions(+)
+
+diff --git a/rtsmart_hal/components/k230_ota/k230_ota.c b/rtsmart_hal/components/k230_ota/k230_ota.c
+index ca5bfad9a1e7b7f43f7bd490e1c312aa75353cac..b9b6aad77d3ca2dc2bb0f7645640bc4079ffcbad 100644
+--- a/rtsmart_hal/components/k230_ota/k230_ota.c
++++ b/rtsmart_hal/components/k230_ota/k230_ota.c
+@@ -29,6 +29,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <unistd.h>
++#include <sys/ioctl.h>
+ 
+ #define OTA_DEV_PATH "/dev/ota"
+ 
+@@ -38,6 +39,9 @@ struct k230_ota_ctx {
+     size_t total_written;
+ };
+ 
++typedef char k230_ota_status_abi_size_check[
++    sizeof(k230_ota_status_t) == K230_OTA_STATUS_ABI_SIZE ? 1 : -1];
++
+ k230_ota_t* k230_ota_create(void)
+ {
+     k230_ota_t* ctx = malloc(sizeof(struct k230_ota_ctx));
+@@ -88,6 +92,16 @@ int k230_ota_update(k230_ota_t* ctx, const void* buf, size_t size)
+     return 0;
+ }
+ 
++int k230_ota_abort_update(k230_ota_t* ctx)
++{
++    if (!ctx || ctx->fd < 0) {
++        errno = EINVAL;
++        return -1;
++    }
++
++    return ioctl(ctx->fd, K230_OTA_IOCTL_ABORT_UPDATE, NULL);
++}
++
+ void k230_ota_destroy(k230_ota_t* ctx)
+ {
+     if (ctx) {
+@@ -138,3 +152,30 @@ _exit:
+     free(buf);
+     return ret;
+ }
++
++int k230_ota_confirm_boot(void)
++{
++    int fd = open(OTA_DEV_PATH, O_RDONLY, 0);
++    int ret;
++
++    if (fd < 0)
++        return -1;
++    ret = ioctl(fd, K230_OTA_IOCTL_CONFIRM_BOOT, NULL);
++    close(fd);
++    return ret;
++}
++
++int k230_ota_get_status(k230_ota_status_t* status)
++{
++    int fd;
++    int ret;
++
++    if (!status)
++        return -1;
++    fd = open(OTA_DEV_PATH, O_RDONLY, 0);
++    if (fd < 0)
++        return -1;
++    ret = ioctl(fd, K230_OTA_IOCTL_GET_STATUS, status);
++    close(fd);
++    return ret;
++}
+diff --git a/rtsmart_hal/components/k230_ota/k230_ota.h b/rtsmart_hal/components/k230_ota/k230_ota.h
+index 7d721652c97479b5f32fa567fe40cd40ca0d2047..9cf57d4daef9778f96951c15c9befe138c42748b 100644
+--- a/rtsmart_hal/components/k230_ota/k230_ota.h
++++ b/rtsmart_hal/components/k230_ota/k230_ota.h
+@@ -30,10 +30,31 @@
+ /* Forward declaration: The user doesn't know what's inside this */
+ typedef struct k230_ota_ctx k230_ota_t;
+ 
++#define K230_OTA_IOCTL_CONFIRM_BOOT 0x4f01
++#define K230_OTA_IOCTL_GET_STATUS   0x4f02
++#define K230_OTA_IOCTL_ABORT_UPDATE 0x4f03
++#define K230_OTA_STATUS_ABI_SIZE    16U
++
++typedef struct {
++    uint32_t version_a;
++    uint32_t version_b;
++    uint8_t valid_a;
++    uint8_t valid_b;
++    uint8_t pending_a;
++    uint8_t pending_b;
++    uint8_t attempts_a;
++    uint8_t attempts_b;
++    char active_slot;
++    char reserved;
++} k230_ota_status_t;
++
+ /* Lifecycle Management */
+ k230_ota_t* k230_ota_create(void);
+ int         k230_ota_update(k230_ota_t* ctx, const void* buf, size_t size);
++int         k230_ota_abort_update(k230_ota_t* ctx);
+ void        k230_ota_destroy(k230_ota_t* ctx);
+ 
+ /* Helper */
+ int k230_ota_write_file(const char* image_path, size_t chunk_size);
++int k230_ota_confirm_boot(void);
++int k230_ota_get_status(k230_ota_status_t* status);

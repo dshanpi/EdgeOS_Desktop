@@ -1,0 +1,266 @@
+From e01e4b196b4854bd11ceda5f5d079fcdd4777a0c Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:05:38 -0400
+Subject: [PATCH 2/2] boards: add isolated EdgeOS A/B product layout
+
+---
+ .../genimage-sdcard-edgeos-ota.cfg            |  41 +++++++
+ .../genimage-sdcard-edgeos.cfg                | 116 ++++++++++++++++++
+ .../k230_canmv_dongshanpi/system-version.txt  |   1 +
+ configs/defconfig_info                        |   1 +
+ .../k230_canmv_dongshanpi_edgeos_defconfig    |  41 +++++++
+ src/rtsmart/Kconfig                           |   2 +-
+ 6 files changed, 201 insertions(+), 1 deletion(-)
+ create mode 100644 boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
+ create mode 100644 boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
+ create mode 100644 boards/k230_canmv_dongshanpi/system-version.txt
+ create mode 100644 configs/k230_canmv_dongshanpi_edgeos_defconfig
+
+diff --git a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
+new file mode 100644
+index 0000000000000000000000000000000000000000..737f53e7c844054d35a79a90a00593bac0207159
+--- /dev/null
++++ b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
+@@ -0,0 +1,41 @@
++image app-ota.vfat {
++	vfat {
++		label = "APP_OTA"
++		extraargs = " -F 32 -s 2 "
++	}
++	size = 512M
++	temporary = true
++	mountpoint = "sdcard"
++}
++
++image sysimage-sdcard-ota.kdimg {
++	kdimage {
++		image_info = "edgeos_ota_rtt_rtapp_app"
++		chip_info = "none"
++		board_info = "none"
++		partition-table-type = "none"
++	}
++
++	# Offsets are package-local. RT-Smart writes each named payload to the
++	# matching partition in the inactive slot.
++	partition rtt {
++		in-partition-table = false
++		offset = 10M
++		size = 20M
++		image = "opensbi/opensbi_rtt_system.bin"
++	}
++
++	partition rtapp {
++		in-partition-table = false
++		offset = 30M
++		size = 20M
++		image = "rtapp/rtapp.elf.gz"
++	}
++
++	partition app {
++		in-partition-table = false
++		offset = 50M
++		size = 512M
++		image = "app-ota.vfat"
++	}
++}
+diff --git a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
+new file mode 100644
+index 0000000000000000000000000000000000000000..c45ec8e6b34980a9008be6267cab6a2789e14ba1
+--- /dev/null
++++ b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
+@@ -0,0 +1,116 @@
++image bin.vfat {
++	vfat {
++		label = "BIN"
++		extraargs = " -F 16 -s 64 "
++	}
++	size = 20M
++	temporary = true
++	mountpoint = "bin"
++}
++
++image app-a.vfat {
++	vfat {
++		label = "APP_A"
++		extraargs = " -F 32 -s 2 "
++	}
++	size = 512M
++	temporary = true
++	mountpoint = "sdcard"
++}
++
++image app-b.vfat {
++	vfat {
++		label = "APP_B"
++		extraargs = " -F 32 -s 2 "
++	}
++	size = 512M
++	temporary = true
++	mountpoint = "sdcard"
++}
++
++image sysimage-sdcard.img {
++	hdimage {
++		toc = true
++		toc-offset = 0xe0000
++		partition-table-type = "mbr"
++	}
++
++	partition ota_meta {
++		in-partition-table = false
++		offset = 0xf0000
++		size = 0x800
++	}
++
++	partition spl {
++		in-partition-table = false
++		offset = 0x100000
++		image = "uboot/fn_u-boot-spl.bin"
++	}
++
++	partition uboot_env {
++		in-partition-table = false
++		offset = 0x1e0000
++		size = 0x10000
++		image = "uboot/env.bin"
++	}
++
++	partition uboot {
++		in-partition-table = false
++		offset = 0x200000
++		image = "uboot/fn_ug_u-boot.bin"
++	}
++
++	partition rtt_a {
++		in-partition-table = false
++		offset = 10M
++		size = 20M
++		image = "opensbi/opensbi_rtt_system.bin"
++		load = true
++		boot = 0x3
++	}
++
++	partition rtapp_a {
++		in-partition-table = false
++		offset = 30M
++		size = 30M
++		image = "rtapp/rtapp.elf.gz"
++		load = true
++	}
++
++	partition rtt_b {
++		in-partition-table = false
++		offset = 60M
++		size = 20M
++		image = "opensbi/opensbi_rtt_system.bin"
++		load = true
++		boot = 0x3
++	}
++
++	partition rtapp_b {
++		in-partition-table = false
++		offset = 80M
++		size = 30M
++		image = "rtapp/rtapp.elf.gz"
++		load = true
++	}
++
++	partition bin {
++		partition-type = 0xc
++		offset = 110M
++		image = "bin.vfat"
++	}
++
++	# Keep both application slots explicit. The factory image initializes the
++	# slots with identical contents; OTA only writes the inactive slot.
++	partition app_a {
++		partition-type = 0xc
++		offset = 130M
++		image = "app-a.vfat"
++	}
++
++	partition app_b {
++		partition-type = 0xc
++		offset = 642M
++		image = "app-b.vfat"
++	}
++}
+diff --git a/boards/k230_canmv_dongshanpi/system-version.txt b/boards/k230_canmv_dongshanpi/system-version.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..aed5a7df66e810a9fddf3b54b93a10bcbf1f6687
+--- /dev/null
++++ b/boards/k230_canmv_dongshanpi/system-version.txt
+@@ -0,0 +1 @@
++v0.7.5
+diff --git a/configs/defconfig_info b/configs/defconfig_info
+index 83919cf1a92dbb6ad4cdc22d79349f1360b79cf0..c7fc5828eda701049e4f4b6d0c2258ea202c8ae0 100644
+--- a/configs/defconfig_info
++++ b/configs/defconfig_info
+@@ -3,6 +3,7 @@ k230_arduino_01studio_defconfig|K230 CanMV 01 Studio, Arduino firmware
+ k230_arduino_lckfb_defconfig|K230 CanMV LCKFB, Arduino firmware
+ k230_canmv_01studio_emmc_defconfig|K230 CanMV 01 Studio, eMMC
+ k230_canmv_dongshanpi_lpddr4_defconfig|K230 CanMV dongshanpi, LPDDR4
++k230_canmv_dongshanpi_edgeos_defconfig|DshanPI CanMV-K230 V3, EdgeOS Desktop
+ k230_canmv_gt6700_camera_ext_defconfig|K230 CanMV GT6700, external camera
+ k230_canmv_v1p0p1_defconfig|K230 CanMV V1.0 or V1.1, AP6212 Wi-Fi
+ k230_rtos_01studio_defconfig|K230 CanMV 01 Studio, RT-Smart firmware
+diff --git a/configs/k230_canmv_dongshanpi_edgeos_defconfig b/configs/k230_canmv_dongshanpi_edgeos_defconfig
+new file mode 100644
+index 0000000000000000000000000000000000000000..097765ce89d96be8aa4a4aa3173a81da931a9ff2
+--- /dev/null
++++ b/configs/k230_canmv_dongshanpi_edgeos_defconfig
+@@ -0,0 +1,41 @@
++CONFIG_BOARD_CONFIG_NAME="k230_canmv_dongshanpi_edgeos_defconfig"
++CONFIG_BOARD_K230_CANMV_DONGSHANPI=y
++CONFIG_BOARD_NAME="DshanPI_EdgeOS_Desktop"
++CONFIG_BOARD_GEN_IMAGE_CFG_FILE="genimage-sdcard-edgeos.cfg"
++CONFIG_BOARD_GEN_OTA_IMAGE_CFG_FILE="genimage-sdcard-edgeos-ota.cfg"
++# CONFIG_UBOOT_USE_PREBUILT is not set
++CONFIG_ENABLE_UVC_CAMERA=y
++CONFIG_MPP_ENABLE_CSI_DEV_0=y
++CONFIG_MPP_CSI_DEV0_POWER=11
++CONFIG_MPP_CSI_DEV0_RESET=53
++CONFIG_MPP_CSI_DEV0_MCLK_1=y
++# CONFIG_MPP_ENABLE_CSI_DEV_1 is not set
++CONFIG_MPP_ENABLE_CSI_DEV_2=y
++CONFIG_MPP_CSI_DEV2_RESET=21
++CONFIG_MPP_CSI_DEV2_I2C_DEV="i2c4"
++CONFIG_MPP_CSI_DEV2_MCLK_1=y
++CONFIG_MPP_ENABLE_SENSOR_GC2093=y
++CONFIG_MPP_SENSOR_GC2093_ON_CSI0_USE_CHIP_CLK=y
++CONFIG_MPP_SENSOR_GC2093_ON_CSI2_USE_CHIP_CLK=y
++CONFIG_MPP_ENABLE_SENSOR_OV5647=y
++CONFIG_MPP_SENSOR_OV5647_ON_CSI2_USE_CHIP_CLK=y
++CONFIG_MPP_ENABLE_SENSOR_OV13850=y
++CONFIG_MPP_ENABLE_DSI_HDMI=y
++CONFIG_MPP_DSI_HDMI_RESET_PIN=24
++CONFIG_MPP_ENABLE_DSI_LCD=y
++CONFIG_MPP_DSI_LCD_RESET_PIN=22
++CONFIG_MPP_DSI_ENABLE_HDMI_LT9611=y
++CONFIG_MPP_DSI_ENABLE_LCD_ST7701=y
++CONFIG_MPP_DSI_ENABLE_LCD_ILI9806=y
++CONFIG_OPENSBI_USE_PREBUILT_FW_JUMP=y
++CONFIG_SDK_ENABLE_CANMV=y
++CONFIG_CANMV_OPENMV_CFG_FB_ALLOC_SIZE=0x1400000
++CONFIG_CANMV_OPENMV_CFG_FB_ALLOC_COUNT=640
++# EdgeOS does not use the optional CanMV WebRTC/libpeer module.
++# CONFIG_ENABLE_MODULE_WEBRTC is not set
++CONFIG_APP_ENABLE_LVGL_LAUNCHER=y
++CONFIG_RTSMART_3RD_PARTY_ALLOW_LVGL_WITH_CANMV=y
++CONFIG_RTSMART_3RD_PARTY_ENABLE_LVGL=y
++CONFIG_RTSMART_3RD_PARTY_ENABLE_CJSON=y
++CONFIG_RT_PARTITION_NUMBER=4
++CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS=y
+diff --git a/src/rtsmart/Kconfig b/src/rtsmart/Kconfig
+index e0e7f539a2e7c6b085ff8ddc40c5178db61e7bc4..ff3e2f377eb2ccd494e47b74d3ef22eef91e1b29 100644
+--- a/src/rtsmart/Kconfig
++++ b/src/rtsmart/Kconfig
+@@ -61,7 +61,7 @@ menu "RT-Smart Configuration"
+             config RT_PARTITION_NUMBER
+                 int "RTSmart Filesystem Count"
+                 default 3
+-                range 2 3
++                range 2 4
+ 
+             config RT_AUTO_RESIZE_PARTITION_ALIGN_SIZE
+                 hex "Auto resize partition alignment size"

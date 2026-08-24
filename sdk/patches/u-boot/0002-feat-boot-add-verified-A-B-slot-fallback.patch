@@ -1,0 +1,873 @@
+From e02667f8992cfcbaf421b131d0c44b563f3463c9 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:40:58 -0400
+Subject: [PATCH 2/2] feat(boot): add verified A/B slot fallback
+
+---
+ board/kendryte/common/k230_boot.c | 723 ++++++++++++++++++++++--------
+ 1 file changed, 545 insertions(+), 178 deletions(-)
+
+diff --git a/board/kendryte/common/k230_boot.c b/board/kendryte/common/k230_boot.c
+index c635d9c985abe6752e37c869b6338ee45e0754da..85b7ed169cc8b1188dd3419f04f2d0c66fc6833d 100755
+--- a/board/kendryte/common/k230_boot.c
++++ b/board/kendryte/common/k230_boot.c
+@@ -67,6 +67,8 @@
+ #define K230_TOC_ENTRY_SIZE    64
+ 
+ #define OTA_META_MAGIC         0x4f544156u  /* 'OTAV' */
++#define OTA_META_PENDING       0x80000000u
++#define OTA_META_ATTEMPTS_MASK 0x000000ffu
+ 
+ #define K230_BOOT_CORE_SHIFT        (0x1)
+ #define K230_BOOT_CORE_MASK         (0x3 << K230_BOOT_CORE_SHIFT) 
+@@ -91,6 +93,7 @@ struct k230_toc {
+ static struct k230_toc toc;
+ static struct blk_desc *pblk_desc;
+ static uint64_t rtapp_load_addr, rtapp_size, rttapp_loaded = 0;
++static char g_selected_boot_slot;
+ 
+ #define K230_DISABLE_NONE_SECURITY_MASK	0x1U
+ #define K230_GCM_IV_LEN			12U
+@@ -110,6 +113,22 @@ struct ota_slot_meta {
+     uint8_t  padding[512 - 16];
+ } __attribute__((packed));
+ 
++_Static_assert(sizeof(struct k230_toc_entry) == K230_TOC_ENTRY_SIZE,
++	       "K230 TOC entry ABI changed");
++_Static_assert(sizeof(struct ota_slot_meta) == 512,
++	       "OTA metadata ABI must remain one 512-byte sector");
++
++struct k230_slot_state {
++	struct ota_slot_meta meta;
++	bool valid;
++	bool empty;
++	bool rejected;
++};
++
++static struct k230_slot_state g_slot_a;
++static struct k230_slot_state g_slot_b;
++static bool g_legacy_slots;
++
+ unsigned long k230_get_encrypted_image_load_addr(void)
+ {
+     unsigned long addr = g_dram_base + g_dram_size - ((g_dram_size / 3) * 2);
+@@ -687,6 +706,29 @@ static void dump_toc_info(void)
+ }
+ #endif
+ 
++static bool k230_boot_uses_mmc(void)
++{
++#if defined(CONFIG_MMC)
++	return (g_boot_medium == BOOT_MEDIUM_SDIO0) ||
++	       (g_boot_medium == BOOT_MEDIUM_SDIO1);
++#else
++	return false;
++#endif
++}
++
++static bool k230_mmc_range_valid(uint64_t offset, uint64_t size)
++{
++	uint64_t capacity;
++
++	if (!k230_boot_uses_mmc() || !pblk_desc || !pblk_desc->blksz ||
++	    !pblk_desc->lba || !size ||
++	    pblk_desc->lba > (~(uint64_t)0 / pblk_desc->blksz))
++		return false;
++
++	capacity = (uint64_t)pblk_desc->lba * pblk_desc->blksz;
++	return offset < capacity && size <= capacity - offset;
++}
++
+ static int k230_parse_toc(void *toc_buf)
+ {
+     struct k230_toc_entry *src = toc_buf;
+@@ -694,11 +736,47 @@ static int k230_parse_toc(void *toc_buf)
+ 	toc.entry_count = 0;
+ 	for (int i = 0; i < K230_TOC_MAX_ENTRIES; i++) {
+         struct k230_toc_entry *dst = &toc.entries[toc.entry_count];
++		uint64_t end;
+ 
+         /* SPI-NAND keeps unwritten TOC slots erased as 0xff. */
+         if ((src->name[0] == '\0') || ((u8)src->name[0] == 0xff)) {
+ 			break;
+ 		}
++		if (strnlen(src->name, sizeof(src->name)) == sizeof(src->name) ||
++		    !src->size || src->size > ~(uint64_t)0 - src->offset) {
++			printf("K230 boot: invalid TOC entry %d\n", i);
++			return -1;
++		}
++
++		end = src->offset + src->size;
++		if (src->offset < K230_TOC_OFFSET +
++				  K230_TOC_MAX_ENTRIES * K230_TOC_ENTRY_SIZE &&
++		    end > K230_TOC_OFFSET) {
++			printf("K230 boot: %.32s overlaps the TOC\n", src->name);
++			return -1;
++		}
++		if (k230_boot_uses_mmc() &&
++		    !k230_mmc_range_valid(src->offset, src->size)) {
++			printf("K230 boot: %.32s lies outside the MMC device\n",
++			       src->name);
++			return -1;
++		}
++
++		for (int j = 0; j < toc.entry_count; j++) {
++			struct k230_toc_entry *other = &toc.entries[j];
++			uint64_t other_end = other->offset + other->size;
++
++			if (!strncmp(src->name, other->name, sizeof(src->name))) {
++				printf("K230 boot: duplicate TOC entry %.32s\n",
++				       src->name);
++				return -1;
++			}
++			if (src->offset < other_end && other->offset < end) {
++				printf("K230 boot: overlapping TOC ranges %.32s and %.32s\n",
++				       src->name, other->name);
++				return -1;
++			}
++		}
+ 
+ 		memcpy(dst, src, sizeof(struct k230_toc_entry));
+ 
+@@ -713,141 +791,373 @@ static int k230_parse_toc(void *toc_buf)
+ 	return (toc.entry_count > 0) ? 0 : -7;
+ }
+ 
++static struct k230_toc_entry *k230_find_toc_entry(const char *name)
++{
++	for (int i = 0; i < toc.entry_count; i++) {
++		if (!strncmp(toc.entries[i].name, name,
++			     sizeof(toc.entries[i].name)))
++			return &toc.entries[i];
++	}
++
++	return NULL;
++}
++
++static int k230_get_ota_meta_offset(char slot, ulong *offset)
++{
++	struct k230_toc_entry *entry;
++	uint64_t span;
++	uint64_t selected;
++
++	if (!offset || (slot != 'A' && slot != 'B'))
++		return -1;
++	entry = k230_find_toc_entry("ota_meta");
++	if (!entry)
++		return -1;
++
++	span = entry->size / 2;
++	selected = entry->offset + (slot == 'B' ? span : 0);
++	if ((entry->size & 1) || span < sizeof(struct ota_slot_meta) ||
++	    span % sizeof(struct ota_slot_meta) ||
++	    selected > (uint64_t)~0UL ||
++	    !k230_mmc_range_valid(selected, sizeof(struct ota_slot_meta)) ||
++	    pblk_desc->blksz != sizeof(struct ota_slot_meta) ||
++	    selected % pblk_desc->blksz) {
++		printf("K230 boot: invalid ota_meta layout for slot %c\n", slot);
++		return -1;
++	}
++
++	*offset = (ulong)selected;
++	return 0;
++}
++
+ static int k230_read_meta_block(ulong offset, void *buf)
+ {
+ #if defined(CONFIG_MMC)
+-    if ((BOOT_MEDIUM_SDIO0 == g_boot_medium) ||
+-        (BOOT_MEDIUM_SDIO1 == g_boot_medium)) {
+-        lbaint_t sector;
+-        lbaint_t cnt = 1;
+-
+-        sector = offset / pblk_desc->blksz;
+-        if (blk_dread(pblk_desc, sector, cnt, buf) != cnt) {
+-            printf("%s: read meta block fail, off=0x%lx\n",
+-                   __func__, offset);
+-            return -1;
+-        }
++	lbaint_t sector;
++
++	if (!buf || !k230_boot_uses_mmc() ||
++	    pblk_desc->blksz != sizeof(struct ota_slot_meta) ||
++	    offset % pblk_desc->blksz ||
++	    !k230_mmc_range_valid(offset, sizeof(struct ota_slot_meta)))
++		return -1;
++
++	sector = offset / pblk_desc->blksz;
++	if (blk_dread(pblk_desc, sector, 1, buf) != 1) {
++		printf("%s: read meta block fail, off=0x%lx\n",
++		       __func__, offset);
++		return -1;
++	}
++	return 0;
++#else
++	return -1;
++#endif
++}
+ 
+-        return 0;
+-    }
++static int k230_write_meta_block(ulong offset,
++				 const struct ota_slot_meta *meta)
++{
++#if defined(CONFIG_MMC)
++	struct ota_slot_meta *write_buf;
++	struct ota_slot_meta *verify_buf;
++	ulong scratch;
++	lbaint_t sector;
++
++	if (!meta || !k230_boot_uses_mmc() ||
++	    pblk_desc->blksz != sizeof(*meta) ||
++	    offset % pblk_desc->blksz ||
++	    !k230_mmc_range_valid(offset, sizeof(*meta)))
++		return -1;
++
++	scratch = k230_get_encrypted_image_load_addr();
++	write_buf = (struct ota_slot_meta *)scratch;
++	verify_buf = (struct ota_slot_meta *)(scratch + sizeof(*meta));
++	memcpy(write_buf, meta, sizeof(*meta));
++	flush_cache((ulong)write_buf, sizeof(*write_buf));
++
++	sector = offset / pblk_desc->blksz;
++	if (blk_dwrite(pblk_desc, sector, 1, write_buf) != 1) {
++		printf("%s: write meta block fail, off=0x%lx\n",
++		       __func__, offset);
++		return -1;
++	}
++	memset(verify_buf, 0, sizeof(*verify_buf));
++	if (blk_dread(pblk_desc, sector, 1, verify_buf) != 1 ||
++	    memcmp(write_buf, verify_buf, sizeof(*write_buf))) {
++		printf("%s: meta readback mismatch, off=0x%lx\n",
++		       __func__, offset);
++		return -1;
++	}
++
++	return 0;
++#else
++	return -1;
+ #endif
++}
++
++static bool k230_meta_is_erased(const struct ota_slot_meta *meta, uint8_t fill)
++{
++	const uint8_t *data = (const uint8_t *)meta;
+ 
+-    return -1;
++	for (size_t i = 0; i < sizeof(*meta); i++) {
++		if (data[i] != fill)
++			return false;
++	}
++	return true;
+ }
+ 
+-static ulong k230_get_ota_meta_offset(char slot)
++static int k230_meta_read_slot(char slot, struct k230_slot_state *state)
+ {
+-    ulong base = 0;
+-    ulong span = 0;
++	struct ota_slot_meta *raw;
++	struct ota_slot_meta check;
++	uint32_t crc_img;
++	ulong off;
++
++	if (!state || k230_get_ota_meta_offset(slot, &off))
++		return -1;
++	memset(state, 0, sizeof(*state));
++
++	raw = (struct ota_slot_meta *)k230_get_encrypted_image_load_addr();
++	if (k230_read_meta_block(off, raw))
++		return -1;
++	if (k230_meta_is_erased(raw, 0x00) ||
++	    k230_meta_is_erased(raw, 0xff)) {
++		state->empty = true;
++		return 0;
++	}
++	if (raw->magic != OTA_META_MAGIC) {
++		printf("WARN: meta slot %c has invalid magic 0x%08x\n",
++		       slot, raw->magic);
++		return 0;
++	}
+ 
+-    for (int i = 0; i < toc.entry_count; i++) {
+-        struct k230_toc_entry *e = &toc.entries[i];
++	memcpy(&check, raw, sizeof(check));
++	crc_img = check.crc32;
++	check.crc32 = 0;
++	if (crc32(0, (const unsigned char *)&check, sizeof(check)) != crc_img) {
++		printf("WARN: meta slot %c crc mismatch\n", slot);
++		return 0;
++	}
+ 
+-        if (!strncmp(e->name, "ota_meta", sizeof(e->name))) {
+-            base = (ulong)e->offset;
+-            span = (ulong)e->size / 2;
+-            break;
+-        }
+-    }
++	memcpy(&state->meta, raw, sizeof(state->meta));
++	state->valid = true;
++	return 0;
++}
+ 
+-    if (!base) {
+-        printf("K230 boot: no 'ota_meta' entry in TOC\n");
+-        return 0;
+-    }
++static int k230_meta_write_slot(char slot, struct ota_slot_meta *meta)
++{
++	ulong off;
+ 
+-    if (!span) {
+-        printf("K230 boot: ota_meta partition size invalid\n");
+-        return 0;
+-    }
++	if (!meta || k230_get_ota_meta_offset(slot, &off))
++		return -1;
++	meta->crc32 = 0;
++	meta->crc32 = crc32(0, (const unsigned char *)meta, sizeof(*meta));
++	return k230_write_meta_block(off, meta);
++}
+ 
+-    if (slot == 'B')
+-        base += span;
++static struct k230_slot_state *k230_get_slot_state(char slot)
++{
++	if (slot == 'A')
++		return &g_slot_a;
++	if (slot == 'B')
++		return &g_slot_b;
++	return NULL;
++}
+ 
+-    return base;
++static bool k230_meta_pending(const struct ota_slot_meta *meta)
++{
++	return meta && (meta->reserved & OTA_META_PENDING) != 0;
+ }
+ 
+-static int k230_meta_read_slot(char slot, uint32_t *pver, bool *pvalid)
++static bool k230_slot_healthy(char slot)
+ {
+-    struct ota_slot_meta *meta;
+-    uint32_t crc_cal, crc_img;
+-    ulong off;
+-    int ret = 0;
++	struct k230_slot_state *state = k230_get_slot_state(slot);
+ 
+-    if ((NULL == pver) || (NULL == pvalid)) {
+-        ret = -1;
+-        printf("invalid para\n");
+-        goto out;
+-    }
++	if (!state || !state->valid || state->rejected)
++		return false;
++	return !k230_meta_pending(&state->meta) ||
++	       (state->meta.reserved & OTA_META_ATTEMPTS_MASK) != 0;
++}
+ 
+-    off = k230_get_ota_meta_offset(slot);
+-    if (!off) {
+-        ret = -1;
+-        goto out;
+-    }
++static int k230_prepare_slot_for_boot(char slot)
++{
++	struct k230_slot_state *state;
++	uint32_t attempts;
++
++	if (g_legacy_slots)
++		return (slot == 'A' || slot == 'B') ? 0 : -1;
++	if (!k230_slot_healthy(slot))
++		return -1;
++
++	state = k230_get_slot_state(slot);
++	if (!k230_meta_pending(&state->meta))
++		return 0;
++
++	attempts = state->meta.reserved & OTA_META_ATTEMPTS_MASK;
++	state->meta.reserved =
++		(state->meta.reserved & ~OTA_META_ATTEMPTS_MASK) |
++		(attempts - 1);
++	if (k230_meta_write_slot(slot, &state->meta)) {
++		state->rejected = true;
++		printf("K230 boot: cannot persist trial attempt for slot %c\n",
++		       slot);
++		return -1;
++	}
+ 
+-    meta = (struct ota_slot_meta *)k230_get_encrypted_image_load_addr();
+-    ret = k230_read_meta_block(off, meta);
+-    if (ret) {
+-        goto out;
+-    }
++	printf("K230 boot: trial slot %c, attempts remaining=%u\n",
++	       slot, attempts - 1);
++	return 0;
++}
+ 
+-    if (meta->magic != OTA_META_MAGIC) {
+-        ret = -1;
+-        goto out;
+-    }
++static char k230_best_healthy_slot(char exclude)
++{
++	bool healthy_a = exclude != 'A' && k230_slot_healthy('A');
++	bool healthy_b = exclude != 'B' && k230_slot_healthy('B');
++
++	if (healthy_a && !healthy_b)
++		return 'A';
++	if (!healthy_a && healthy_b)
++		return 'B';
++	if (!healthy_a && !healthy_b)
++		return 0;
++	return g_slot_a.meta.version >= g_slot_b.meta.version ? 'A' : 'B';
++}
+ 
+-    crc_img = meta->crc32;
+-    meta->crc32 = 0;
+-    crc_cal = crc32(0, (const unsigned char *)meta, sizeof(*meta));
+-    if (crc_cal != crc_img) {
+-        printf("WARN: meta slot %c crc mismatch: calc=0x%08x img=0x%08x\n",
+-               slot, crc_cal, crc_img);
+-        ret = -1;
+-        goto out;
+-    }
++static char k230_select_boot_slot(void)
++{
++	char selected;
++	char alternate;
+ 
+-    *pver = meta->version;
+-    *pvalid = true;
++	memset(&g_slot_a, 0, sizeof(g_slot_a));
++	memset(&g_slot_b, 0, sizeof(g_slot_b));
++	g_legacy_slots = false;
+ 
+-out:
+-    return ret;
++	/* Non-MMC and pre-OTA layouts preserve the historical slot-A boot. */
++	if (!k230_boot_uses_mmc() || !k230_find_toc_entry("ota_meta")) {
++		g_legacy_slots = true;
++		return 'A';
++	}
++	if (k230_meta_read_slot('A', &g_slot_a) ||
++	    k230_meta_read_slot('B', &g_slot_b)) {
++		printf("K230 boot: cannot read OTA metadata safely\n");
++		return 0;
++	}
++	if (g_slot_a.empty && g_slot_b.empty) {
++		g_legacy_slots = true;
++		return 'A';
++	}
++	/*
++	 * Once either block is non-empty, only valid, non-exhausted metadata is
++	 * eligible; never turn a strict-mode failure into a blind slot flip.
++	 */
++
++	if (g_slot_a.valid && g_slot_b.valid &&
++	    (g_slot_a.meta.version > g_slot_b.meta.version ?
++	     g_slot_a.meta.version - g_slot_b.meta.version :
++	     g_slot_b.meta.version - g_slot_a.meta.version) > 1)
++		printf("WARN: slot version gap too large: A=0x%x B=0x%x\n",
++		       g_slot_a.meta.version, g_slot_b.meta.version);
++
++	selected = k230_best_healthy_slot(0);
++	if (!selected) {
++		printf("K230 boot: no valid non-exhausted slot\n");
++		return 0;
++	}
++	if (!k230_prepare_slot_for_boot(selected))
++		return selected;
++
++	alternate = k230_best_healthy_slot(selected);
++	if (alternate && !k230_prepare_slot_for_boot(alternate))
++		return alternate;
++
++	printf("K230 boot: no slot can be prepared safely\n");
++	return 0;
+ }
+ 
+-static char k230_select_boot_slot(void)
++static char k230_toc_entry_slot(const struct k230_toc_entry *entry)
+ {
+-    uint32_t ver_a = 0, ver_b = 0;
+-    bool valid_a = false, valid_b = false;
+-    char active = 'A';
++	if (!entry)
++		return 0;
++	if (!strncmp(entry->name, "rtt_a", sizeof(entry->name)) ||
++	    !strncmp(entry->name, "rtapp_a", sizeof(entry->name)))
++		return 'A';
++	if (!strncmp(entry->name, "rtt_b", sizeof(entry->name)) ||
++	    !strncmp(entry->name, "rtapp_b", sizeof(entry->name)))
++		return 'B';
++	return 0;
++}
+ 
+-    if (k230_meta_read_slot('A', &ver_a, &valid_a))
+-        valid_a = 0;
+-    if (k230_meta_read_slot('B', &ver_b, &valid_b))
+-        valid_b = 0;
++static bool k230_slot_has_boot_images(char slot)
++{
++	bool has_ab_layout = false;
++	bool has_rtt = false;
++	bool has_rtapp = false;
++
++	for (int i = 0; i < toc.entry_count; i++) {
++		struct k230_toc_entry *entry = &toc.entries[i];
++		char entry_slot = k230_toc_entry_slot(entry);
++
++		if (!entry_slot)
++			continue;
++		has_ab_layout = true;
++		if (entry_slot != slot || !entry->load)
++			continue;
++		if (!strncmp(entry->name, "rtt_", 4))
++			has_rtt = (entry->boot & K230_BOOT_FLAG_MASK) != 0;
++		else if (!strncmp(entry->name, "rtapp_", 6))
++			has_rtapp = true;
++	}
+ 
+-    if (!valid_a && !valid_b) {
+-        goto out;
+-    }
++	/* A legacy TOC without slot-suffixed images keeps its original path. */
++	return !has_ab_layout ? g_legacy_slots : has_rtt && has_rtapp;
++}
+ 
+-    if (valid_a && !valid_b) {
+-        active = 'A';
+-    } else if (!valid_a && valid_b) {
+-        active = 'B';
+-    } else {
+-        if (ver_a == ver_b)
+-            active = 'A';
+-        else if (ver_a > ver_b)
+-            active = 'A';
+-        else
+-            active = 'B';
+-
+-        if ((ver_a > ver_b ? (ver_a - ver_b) : (ver_b - ver_a)) > 1) {
+-            printf("WARN: slot version gap too large: A=0x%x B=0x%x\n",
+-                   ver_a, ver_b);
+-        }
+-    }
++static int k230_mark_slot_failed(char slot)
++{
++	struct k230_slot_state *state = k230_get_slot_state(slot);
++
++	if (!state)
++		return -1;
++	state->rejected = true;
++
++	/*
++	 * Empty factory metadata has no durable health state. A pending slot,
++	 * however, is exhausted immediately after an image verification failure
++	 * so the next boot rolls back instead of spending redundant attempts.
++	 */
++	if (g_legacy_slots || !state->valid ||
++	    !k230_meta_pending(&state->meta))
++		return 0;
++
++	state->meta.reserved =
++		(state->meta.reserved | OTA_META_PENDING) &
++		~OTA_META_ATTEMPTS_MASK;
++	if (k230_meta_write_slot(slot, &state->meta)) {
++		printf("K230 boot: cannot persist failed slot %c\n", slot);
++		return -1;
++	}
+ 
+-out:
+-    return active;
++	printf("K230 boot: marked trial slot %c exhausted\n", slot);
++	return 0;
++}
++
++static char k230_get_fallback_slot(char failed)
++{
++	char alternate;
++
++	/*
++	 * Factory images intentionally duplicate A into B. While both metadata
++	 * blocks are empty, permit one B attempt and let the normal signed-image
++	 * verification path decide whether it is usable.
++	 */
++	if (g_legacy_slots)
++		return failed == 'A' ? 'B' : 0;
++
++	alternate = k230_best_healthy_slot(failed);
++	if (!alternate)
++		return 0;
++	if (k230_prepare_slot_for_boot(alternate))
++		return 0;
++	return alternate;
+ }
+ 
+ static uint get_gunzip_dest_length(const u8 *zipped_data, uint zipped_len)
+@@ -1066,16 +1376,16 @@ static uint _k230_load_img(const char *toc_name, uint64_t offset,
+         goto out;
+     }
+ 
+-    if (is_rtapp) {
+-        rttapp_loaded = 1;
+-    }
+-
+     ret = k230_boot_decomp_to_load_addr(pUh, dst_len, src_data, &src_len);
+     if (ret) {
+         printf("%s: decomp_to_load_addr fail: %d\n", __func__, ret);
+         ret = -1;
++		goto out;
+     }
+ 
++	if (is_rtapp)
++		rttapp_loaded = 1;
++
+ out:
+     if (0 != ret) {
+         return INVALID_LOAD_ADDR;
+@@ -1086,59 +1396,108 @@ out:
+ 
+ static int k230_load_img(void)
+ {
+-    uint l_addr;
+-    char slot = k230_select_boot_slot();
+-    int cnt = 0;
++	uint l_addr;
++	uint8_t original_boot[K230_TOC_MAX_ENTRIES];
++	bool attempted_a = false;
++	bool attempted_b = false;
++	char slot;
++
++	g_selected_boot_slot = 0;
++	for (int i = 0; i < toc.entry_count; i++)
++		original_boot[i] = toc.entries[i].boot;
++
++	slot = k230_select_boot_slot();
++	if (slot != 'A' && slot != 'B') {
++		printf("K230 boot: slot selection failed closed\n");
++		return -1;
++	}
+ 
+ retry:
+-    cnt++;
+-
+-    for (int i = 0; i < toc.entry_count; i++) {
+-        struct k230_toc_entry *e = &toc.entries[i];
+-        bool _boot = false;
+-
+-        if (!e->load)
+-            continue;
+-
+-        if (e->boot) {
+-            e->boot &= ~K230_BOOT_FLAG_MASK;
+-            _boot = true;
+-        }
+-
+-        if (0 == strncmp(e->name, "rtt_a", sizeof(e->name)) ||
+-            0 == strncmp(e->name, "rtapp_a", sizeof(e->name))) {
+-            if (slot == 'B') {
+-                continue;
+-            }
+-        } else if (0 == strncmp(e->name, "rtt_b", sizeof(e->name)) ||
+-                   0 == strncmp(e->name, "rtapp_b", sizeof(e->name))) {
+-            if (slot == 'A') {
+-                continue;
+-            }
+-        }
++	if ((slot == 'A' && attempted_a) ||
++	    (slot == 'B' && attempted_b)) {
++		printf("K230 boot: refusing repeated slot %c attempt\n", slot);
++		return -1;
++	}
++	if (slot == 'A')
++		attempted_a = true;
++	else
++		attempted_b = true;
++
++	if (!k230_slot_has_boot_images(slot)) {
++		char alternate;
++
++		printf("K230 boot: slot %c lacks required rtt/rtapp images\n",
++		       slot);
++		k230_mark_slot_failed(slot);
++		alternate = k230_get_fallback_slot(slot);
++		if (!alternate)
++			return -1;
++		slot = alternate;
++		goto retry;
++	}
+ 
+-        l_addr = _k230_load_img(e->name, e->offset, e->size);
+-        if (l_addr == INVALID_LOAD_ADDR) {
+-            printf("%s: load %s failed on slot %c, try slot %c\n",
+-                   __func__, e->name, slot, ((slot == 'A') ? 'B': 'A'));
++	rttapp_loaded = 0;
++	rtapp_load_addr = 0;
++	rtapp_size = 0;
++	for (int i = 0; i < toc.entry_count; i++) {
++		toc.entries[i].boot = original_boot[i];
++		toc.entries[i].load_addr = 0;
++	}
+ 
+-            if (cnt == 1) {
+-                slot = (slot == 'A') ? 'B' : 'A';
+-                goto retry;
+-            }
++	for (int i = 0; i < toc.entry_count; i++) {
++		struct k230_toc_entry *e = &toc.entries[i];
++		char entry_slot;
+ 
+-            /* 第二次尝试仍失败，放弃启动 */
+-            return -1;
+-        }
++		entry_slot = k230_toc_entry_slot(e);
++		if (entry_slot && entry_slot != slot) {
++			e->boot &= ~K230_BOOT_FLAG_MASK;
++			continue;
++		}
++		if (!e->load)
++			continue;
++
++		l_addr = _k230_load_img(e->name, e->offset, e->size);
++		if (l_addr == INVALID_LOAD_ADDR) {
++			char alternate;
++
++			if (entry_slot != slot) {
++				printf("%s: shared image %s failed; no slot fallback\n",
++				       __func__, e->name);
++				return -1;
++			}
++
++			k230_mark_slot_failed(slot);
++			alternate = k230_get_fallback_slot(slot);
++			if (!alternate) {
++				printf("%s: load %s failed on slot %c; no healthy fallback\n",
++				       __func__, e->name, slot);
++				return -1;
++			}
++			printf("%s: load %s failed on slot %c, try slot %c\n",
++			       __func__, e->name, slot, alternate);
++			slot = alternate;
++			goto retry;
++		}
+ 
+-        e->load_addr = l_addr;
++		e->load_addr = l_addr;
++	}
+ 
+-        if (_boot) {
+-            e->boot |= K230_BOOT_FLAG_MASK;
+-        }
+-    }
++	if (!rttapp_loaded &&
++	    k230_find_toc_entry(slot == 'A' ? "rtapp_a" : "rtapp_b")) {
++		char alternate;
++
++		printf("K230 boot: slot %c rtapp did not produce an ATAG payload\n",
++		       slot);
++		k230_mark_slot_failed(slot);
++		alternate = k230_get_fallback_slot(slot);
++		if (!alternate)
++			return -1;
++		slot = alternate;
++		goto retry;
++	}
+ 
+-    return 0;
++	g_selected_boot_slot = slot;
++	return 0;
+ }
+ 
+ static void k230_boot_core(int core, ulong run_addr)
+@@ -1172,47 +1531,55 @@ static void k230_boot_core(int core, ulong run_addr)
+ 
+ }
+ 
+-static void k230_setup_user_tag(void)
++static int k230_setup_user_tag(void)
+ {
++	if (g_selected_boot_slot != 'A' && g_selected_boot_slot != 'B') {
++		printf("K230 boot: refusing invalid OTA slot ATAG\n");
++		return -1;
++	}
++
+     setup_start_tag();
+     setup_k230_ddr_size_tag(g_dram_size);
+     if(rttapp_loaded) {
+         setup_k230_rtapp_tag(rtapp_size, rtapp_load_addr);
+     }
++	setup_k230_ota_slot_tag(g_selected_boot_slot);
+     setup_end_tag();
++	return 0;
+ }
+ 
+-static void k230_boot_img(void)
++static int k230_boot_img(void)
+ {
+-    struct k230_toc_entry *core0_entry = NULL;
+-    struct k230_toc_entry *core1_entry = NULL;
++	struct k230_toc_entry *core0_entry = NULL;
++	struct k230_toc_entry *core1_entry = NULL;
+ 
+-    for (int i = 0; i < toc.entry_count; i++) {
+-        struct k230_toc_entry *e = &toc.entries[i];
++	for (int i = 0; i < toc.entry_count; i++) {
++		struct k230_toc_entry *e = &toc.entries[i];
+ 
+-        if (e->boot & K230_BOOT_FLAG_MASK) {
+-            int core_num = (e->boot & K230_BOOT_CORE_MASK) >> K230_BOOT_CORE_SHIFT;
++		if (e->boot & K230_BOOT_FLAG_MASK) {
++			int core_num = (e->boot & K230_BOOT_CORE_MASK) >>
++				       K230_BOOT_CORE_SHIFT;
+ 
+-            if (core_num == 0) {
+-                core0_entry = e;
+-            } else if (core_num == 1) {
+-                core1_entry = e;
+-            }
+-        }
+-    }
++			if (core_num == 0)
++				core0_entry = e;
++			else if (core_num == 1)
++				core1_entry = e;
++		}
++	}
+ 
+-    if (core1_entry) {
+-        k230_setup_user_tag();
+-        k230_boot_core(1, core1_entry->load_addr);
+-    }
++	if (core1_entry) {
++		if (k230_setup_user_tag())
++			return -1;
++		k230_boot_core(1, core1_entry->load_addr);
++	}
+ 
+-    if (core0_entry) {
+-        k230_boot_core(0, core0_entry->load_addr);
+-    }
++	if (core0_entry)
++		k230_boot_core(0, core0_entry->load_addr);
+ 
+-    while (1) {
+-        asm volatile("wfi");
+-    }
++	while (1)
++		asm volatile("wfi");
++
++	return -1;
+ }
+ 
+ int k230_run_system(void)
+@@ -1239,7 +1606,7 @@ int k230_run_system(void)
+         goto out;
+     }
+ 
+-    k230_boot_img();
++	ret = k230_boot_img();
+ 
+ out:
+     return ret;

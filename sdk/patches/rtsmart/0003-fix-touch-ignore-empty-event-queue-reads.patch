@@ -1,0 +1,74 @@
+From a198983031c982353d8784110c41b3b78394b2a0 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:22:45 -0400
+Subject: [PATCH 3/4] fix(touch): ignore empty event queue reads
+
+---
+ .../maix3/drivers/extdrv/touch/drv_touch.c    | 27 +++++--------------
+ .../maix3/drivers/extdrv/touch/drv_touch.h    |  2 +-
+ 2 files changed, 7 insertions(+), 22 deletions(-)
+
+diff --git a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
+index b4c51af89718d11ac123b9a3d71835867f1cec80..9e9832a6ebc2b8b08d8bd9d8b752e92a01966d76 100644
+--- a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
++++ b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.c
+@@ -348,13 +348,9 @@ static void touch_read_thread(void* args)
+ 
+ static rt_size_t drv_touch_read(struct rt_touch_device* touch, void* buf, rt_size_t len)
+ {
+-    static rt_size_t last_finger_num = 0;
+-
+     struct touch_register reg = {};
+     struct drv_touch_dev* dev = touch->config.user_data;
+ 
+-    rt_bool_t have_new_data = RT_FALSE;
+-
+     // make a fake interrupt
+     if (dev->pin.fake_intr) {
+         uint32_t flag = TOUCH_THREAD_MQ_INT_FLAG;
+@@ -362,26 +358,15 @@ static rt_size_t drv_touch_read(struct rt_touch_device* touch, void* buf, rt_siz
+         rt_thread_mdelay(1);
+     }
+ 
+-    if (RT_EOK == rt_mq_recv(&dev->thr.read_mq, &reg, sizeof(reg), 0)) {
+-        have_new_data = RT_TRUE;
+-    } else {
+-        if (last_finger_num <= 0) {
+-            return 0;
+-        }
+-
+-        last_finger_num = 0;
+-    }
++    /* An empty event queue means that no controller report is available. It
++     * must not be parsed as a zero-filled synthetic release event. */
++    if (RT_EOK != rt_mq_recv(&dev->thr.read_mq, &reg, sizeof(reg), 0))
++        return 0;
+ 
+-    rt_size_t             result, req_finger_num = len / sizeof(struct rt_touch_data);
++    rt_size_t             req_finger_num = len / sizeof(struct rt_touch_data);
+     struct rt_touch_data* req_point = (struct rt_touch_data*)buf;
+ 
+-    result = drv_touch_parse(dev, &reg, req_point, &req_finger_num);
+-
+-    if (have_new_data) {
+-        last_finger_num = result / sizeof(struct rt_touch_data);
+-    }
+-
+-    return result;
++    return drv_touch_parse(dev, &reg, req_point, &req_finger_num);
+ }
+ #else
+ static volatile int int_flag = 0x00;
+diff --git a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.h b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.h
+index c71adb363e66eb493ecefe239bb8f3e8592d6000..a89336a02753c7ce5b0c795c79ffb18bd0d6cfd7 100644
+--- a/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.h
++++ b/kernel/bsp/maix3/drivers/extdrv/touch/drv_touch.h
+@@ -37,7 +37,7 @@
+ 
+ #define TOUCH_MAX_POINT_NUMBER  10
+ #define TOUCH_READ_REG_MAX_SIZE 128
+-#define TOUCH_READ_MQ_MSG_COUNT 16
++#define TOUCH_READ_MQ_MSG_COUNT 32
+ 
+ struct touch_register {
+     rt_tick_t time;

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="github" fetch="https://github.com/"/>
+
+  <project name="DaveGamble/cJSON" path="src/rtsmart/libs/3rd-party/cjson/cJSON" remote="github" revision="fb16e5cf358798aabb049655975cde8427101056" upstream="master" dest-branch="master" groups="sdk-common" clone-depth="100"/>
+  <project name="apache/mynewt-nimble" path="src/rtsmart/libs/3rd-party/nimble/nimble" remote="github" revision="70da7f3a05c3ded36c08c56e481fb400c5c29bac" groups="sdk-common"/>
+  <project name="canmv-k230/aic8800_fw" path="src/rtsmart/rtsmart/kernel/bsp/maix3/drivers/extdrv/aic8800/firmware" remote="github" revision="e5bcfd0332d7551cf659b1ae9b50c8648870928b" upstream="main" dest-branch="main" groups="sdk-special"/>
+  <project name="canmv-k230/k230_rtsmart_examples" path="src/rtsmart/examples" remote="github" revision="f0304ac63437a6291955e74bd344ff813a71a4c5" upstream="main" dest-branch="main" groups="sdk"/>
+  <project name="canmv-k230/k230_rtsmart_lib" path="src/rtsmart/libs" remote="github" revision="4964b24f020825216a3095ba7ba998ae6e76bce7" upstream="main" dest-branch="main" groups="sdk"/>
+  <project name="canmv-k230/mbedtls" path="src/rtsmart/libs/3rd-party/mbedtls/mbedtls" remote="github" revision="a3ff9bce6b1c554a91bb3ced0f83046442a1694c" upstream="canmv_k230" dest-branch="canmv_k230" groups="sdk-common" clone-depth="10"/>
+  <project name="canmv-k230/micropython" path="src/canmv/micropython" remote="github" revision="0295137e60c0de862c8ee72d81c88d9e57e3973b" upstream="canmv_k230" dest-branch="canmv_k230" groups="canmv-common"/>
+  <project name="canmv-k230/mpp" path="src/rtsmart/mpp" remote="github" revision="631ca8660b3139982a37a9e1dd5b3f9f7b8af0ad" upstream="main" dest-branch="main" groups="sdk-special"/>
+  <project name="canmv-k230/nncase_kmodels_v2_11" path="src/rtsmart/libs/kmodel" remote="github" revision="830f035e8907b89015e15c4a85cf7f59e06c4175" upstream="v2.11.0" dest-branch="v2.11.0" groups="sdk-common"/>
+  <project name="canmv-k230/opensbi" path="src/opensbi/opensbi" remote="github" revision="ea1ceab9f0af65251e4a5c7d943a1cfa5e9002d6" upstream="main" dest-branch="main" groups="sdk-common"/>
+  <project name="canmv-k230/rtsmart" path="src/rtsmart/rtsmart" remote="github" revision="650f165630753c29cf85f8e64ebf75196d7a5726" upstream="main" dest-branch="main" groups="sdk"/>
+  <project name="canmv-k230/u-boot" path="src/uboot/uboot" remote="github" revision="56a131d12108009012eca0204e7dd610a3e7d618" upstream="main" dest-branch="main" groups="sdk"/>
+  <project name="canmv-k230/ybsdcard" path="src/canmv/resources/ybsdcard" remote="github" revision="c6ce8fab643c8aad22b0db97b9ff1f10d4fd8d94" upstream="master" dest-branch="master" groups="canmv-common" clone-depth="20"/>
+  <project name="eliben/pycparser" path="src/canmv/port/3rd-party/lv_bindings/pycparser" remote="github" revision="3cf6bf5eb16f5eadd4a058e41596145c407a79ad" groups="canmv-common" clone-depth="1000"/>
+  <project name="esnet/iperf" path="src/rtsmart/examples/3rd-party/iperf/iperf" remote="github" revision="c9b74229d0d9bfec6d2307b66b43c29a7665ad0b" groups="sdk-common"/>
+  <project name="freetype/freetype" path="src/rtsmart/libs/3rd-party/freetype/freetype" remote="github" revision="1452355de99d22b0cba6ccc17bf5cdf3682ef61e" groups="sdk-common" clone-depth="100"/>
+  <project name="jiejieTop/mqttclient" path="src/rtsmart/libs/3rd-party/mqttclient/mqttclient" remote="github" revision="956e0c8dcac02d4b107ccb49f1990c7718b6b585" groups="sdk-common" clone-depth="100"/>
+  <project name="kendryte/canmv_k230" path="src/canmv" remote="github" revision="791c1ceee8acb4699d59d8dbf8f043ea3940a766" upstream="canmv_k230" dest-branch="canmv_k230" groups="canmv_super"/>
+  <project name="kendryte/k230_rtos_sdk" path="." remote="github" revision="3f18247b48635f83f439bc13e564ce90d8655d18" upstream="main" dest-branch="main" groups="sdk_super"/>
+  <project name="lvgl/lvgl" path="src/rtsmart/libs/3rd-party/lvgl/lvgl" remote="github" revision="c210a4efa2f474d0223d3e91c79963e1ae4ac0bc" upstream="refs/heads/release/v9.4" dest-branch="refs/heads/release/v9.4" groups="sdk-common" clone-depth="100"/>
+  <project name="lvgl/lvgl" path="src/canmv/port/3rd-party/lv_bindings/lvgl" remote="github" revision="1bfdecf585bb50fbb22ed1c38450b5c9eb600196" groups="canmv-common" clone-depth="2000"/>
+  <project name="micropython/micropython-lib" path="src/canmv/micropython/lib/micropython-lib" remote="github" revision="e025c843b60e93689f0f991d753010bb5bd6a722" groups="canmv-common" clone-depth="200"/>
+  <project name="micropython/mynewt-nimble" path="src/canmv/micropython/lib/mynewt-nimble" remote="github" revision="42849560ba7906f023f61e5f7ff3709ba2c1dfca" upstream="refs/heads/micropython_1_4_0" groups="canmv-common"/>
+  <project name="warmcat/libwebsockets" path="src/rtsmart/libs/3rd-party/libwebsockets/libwebsockets" remote="github" revision="ff5a3aa702d8864caa23931fc508df099cc3e816" groups="sdk-common" clone-depth="100"/>
+</manifest>

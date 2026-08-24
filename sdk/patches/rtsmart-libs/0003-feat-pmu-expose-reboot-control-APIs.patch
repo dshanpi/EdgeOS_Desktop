@@ -1,0 +1,69 @@
+From f8022e2002bd128609e2d47f9dc41f459a1cf29c Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:07:13 -0400
+Subject: [PATCH 3/5] feat(pmu): expose reboot control APIs
+
+---
+ rtsmart_hal/drivers/pmu/drv_pmu.c | 16 ++++++++++++++++
+ rtsmart_hal/drivers/pmu/drv_pmu.h |  7 +++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/rtsmart_hal/drivers/pmu/drv_pmu.c b/rtsmart_hal/drivers/pmu/drv_pmu.c
+index 824061b5042871985fe250fa61eaf74ae15f453f..3412bc7cbdfaec4972e92512839959c9bf73c772 100644
+--- a/rtsmart_hal/drivers/pmu/drv_pmu.c
++++ b/rtsmart_hal/drivers/pmu/drv_pmu.c
+@@ -95,6 +95,10 @@ struct drv_pmu_wakeup_source {
+     _IOWR('P', 0x07, struct drv_pmu_wakeup_pad_level)
+ #define PMU_IOCTL_GET_WAKEUP_SOURCE \
+     _IOR('P', 0x08, struct drv_pmu_wakeup_source)
++#define PMU_IOCTL_REBOOT \
++    _IO('P', DRV_PMU_IOCTL_REBOOT_NR)
++#define PMU_IOCTL_REBOOT_TO_UPGRADE \
++    _IO('P', DRV_PMU_IOCTL_REBOOT_TO_UPGRADE_NR)
+ 
+ struct drv_pmu_inst {
+     int fd;
+@@ -366,6 +370,18 @@ int drv_pmu_shutdown_now(drv_pmu_inst_t *inst)
+                  "[hal_pmu] ioctl(SHUTDOWN_NOW)");
+ }
+ 
++int drv_pmu_reboot(drv_pmu_inst_t *inst)
++{
++    return drv_pmu_ioctl(inst, PMU_IOCTL_REBOOT, NULL,
++                 "[hal_pmu] ioctl(REBOOT)");
++}
++
++int drv_pmu_reboot_to_upgrade(drv_pmu_inst_t *inst)
++{
++    return drv_pmu_ioctl(inst, PMU_IOCTL_REBOOT_TO_UPGRADE, NULL,
++                 "[hal_pmu] ioctl(REBOOT_TO_UPGRADE)");
++}
++
+ int drv_pmu_wakeup_pad_get_level(drv_pmu_inst_t *inst, uint32_t pad, int *level)
+ {
+     struct drv_pmu_wakeup_pad_level result;
+diff --git a/rtsmart_hal/drivers/pmu/drv_pmu.h b/rtsmart_hal/drivers/pmu/drv_pmu.h
+index a05aa3faf1deb79f30afbd84f91edede656859ab..1f9250c8cc2a5b915ddc02203eccc9f0a53a3e70 100644
+--- a/rtsmart_hal/drivers/pmu/drv_pmu.h
++++ b/rtsmart_hal/drivers/pmu/drv_pmu.h
+@@ -36,6 +36,10 @@ typedef struct drv_pmu_inst drv_pmu_inst_t;
+ /* RTC alarm programming needs at least two seconds of lead time. */
+ #define DRV_PMU_POWER_CYCLE_MIN_DELAY_S 2U
+ 
++/* Stable command numbers shared with the RT-Smart PMU driver ABI. */
++#define DRV_PMU_IOCTL_REBOOT_NR            0x09U
++#define DRV_PMU_IOCTL_REBOOT_TO_UPGRADE_NR 0x0AU
++
+ int drv_pmu_inst_create(drv_pmu_inst_t **inst);
+ void drv_pmu_inst_destroy(drv_pmu_inst_t **inst);
+ 
+@@ -48,6 +52,9 @@ int drv_pmu_key_confirm_shutdown(drv_pmu_inst_t *inst);
+ 
+ /* Shut down immediately; this deliberately bypasses the long-press policy. */
+ int drv_pmu_shutdown_now(drv_pmu_inst_t *inst);
++/* Reboot normally, or enter the bootloader upgrade path on the next boot. */
++int drv_pmu_reboot(drv_pmu_inst_t *inst);
++int drv_pmu_reboot_to_upgrade(drv_pmu_inst_t *inst);
+ 
+ /* Read the current level of the configured shutdown wakeup pad. */
+ int drv_pmu_wakeup_pad_get_level(drv_pmu_inst_t *inst, uint32_t pad,

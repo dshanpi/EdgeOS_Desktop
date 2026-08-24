@@ -1,0 +1,782 @@
+From f56dbe0789f7d4aba42f4f50d206f22915eed06a Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 00:04:28 -0400
+Subject: [PATCH 1/5] feat(lvgl): add filtered touch gesture API
+
+---
+ 3rd-party/lvgl/port/lv_k230_input_touch.c | 628 ++++++++++++++++++++--
+ 3rd-party/lvgl/port/lv_k230_input_touch.h |  14 +
+ rtsmart_hal/drivers/touch/drv_touch.c     |   5 +
+ 3 files changed, 615 insertions(+), 32 deletions(-)
+
+diff --git a/3rd-party/lvgl/port/lv_k230_input_touch.c b/3rd-party/lvgl/port/lv_k230_input_touch.c
+index ca0ee5bdd267eb1dc840a7f5800095468dc201c9..2b931bc212bb7ae0b6796aa41c74f3631415966e 100644
+--- a/3rd-party/lvgl/port/lv_k230_input_touch.c
++++ b/3rd-party/lvgl/port/lv_k230_input_touch.c
+@@ -23,10 +23,342 @@
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ #include "lv_k230_input_touch.h"
++#include "src/display/lv_display.h"
++#include "generated/autoconf.h"
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
++#define LV_K230_TOUCH_DEBUG 0
++#define LV_K230_TOUCH_GESTURE_DEBUG 0
++#define LV_K230_TOUCH_READ_PERIOD_MS 5U
++#define LV_K230_TOUCH_UP_SETTLE_MS 15U
++#define LV_K230_TOUCH_DEAD_ZONE 1
++#define LV_K230_TOUCH_POST_SWIPE_BLOCK_MS 300U
++#define LV_K230_TOUCH_CLICK_DEBOUNCE_MS 60U
++#define LV_K230_TOUCH_TAP_BOUNCE_BLOCK_MS 360U
++#define LV_K230_TOUCH_TAP_BOUNCE_DISTANCE 32
++
++typedef struct {
++    drv_touch_inst_t*    inst;
++    struct drv_touch_info info;
++    int                   rotate;
++    lv_indev_state_t      last_state;
++    int32_t               last_x;
++    int32_t               last_y;
++    uint32_t              last_input_event_tick;
++    bool                  pending_release;
++    uint32_t              pending_release_tick;
++    uint32_t              pending_release_event_tick;
++    int32_t               gesture_start_x;
++    int32_t               gesture_start_y;
++    bool                  gesture_moved;
++    bool                  gesture_blocked;
++    bool                  last_release_was_tap;
++    uint32_t              release_serial;
++    uint32_t              consumed_serial;
++    uint32_t              suppress_click_until;
++    uint32_t              last_accepted_click_tick;
++    uint32_t              release_event_tick;
++    uint32_t              last_accepted_release_event_tick;
++    int32_t               last_accepted_x;
++    int32_t               last_accepted_y;
++    uint32_t              tap_bounce_block_until;
++    int32_t               last_tap_x;
++    int32_t               last_tap_y;
++    bool                  suppressing_bounce;
++    int16_t               active_track_id;
++    int32_t               filter_x[3];
++    int32_t               filter_y[3];
++    uint8_t               filter_index;
++} lv_k230_touch_context_t;
++
++static lv_k230_touch_context_t* g_touch_context;
++
++static bool tick_is_before(uint32_t now, uint32_t deadline)
++{
++    return (int32_t)(now - deadline) < 0;
++}
++
++static int32_t median3(int32_t a, int32_t b, int32_t c)
++{
++    if (a > b) {
++        int32_t tmp = a;
++        a = b;
++        b = tmp;
++    }
++    if (b > c) {
++        int32_t tmp = b;
++        b = c;
++        c = tmp;
++    }
++    return a > b ? a : b;
++}
++
++static void reset_filter(lv_k230_touch_context_t* context,
++                         int32_t x, int32_t y)
++{
++    for (int i = 0; i < 3; ++i) {
++        context->filter_x[i] = x;
++        context->filter_y[i] = y;
++    }
++    context->filter_index = 0;
++}
++
++static void filter_point(lv_k230_touch_context_t* context,
++                         int32_t* x, int32_t* y)
++{
++    context->filter_x[context->filter_index] = *x;
++    context->filter_y[context->filter_index] = *y;
++    context->filter_index = (uint8_t)((context->filter_index + 1U) % 3U);
++
++    int32_t filtered_x = median3(context->filter_x[0],
++                                 context->filter_x[1],
++                                 context->filter_x[2]);
++    int32_t filtered_y = median3(context->filter_y[0],
++                                 context->filter_y[1],
++                                 context->filter_y[2]);
++    if (abs(filtered_x - context->last_x) <= LV_K230_TOUCH_DEAD_ZONE &&
++        abs(filtered_y - context->last_y) <= LV_K230_TOUCH_DEAD_ZONE) {
++        filtered_x = context->last_x;
++        filtered_y = context->last_y;
++    }
++    *x = filtered_x;
++    *y = filtered_y;
++}
++
++static void finish_gesture(lv_k230_touch_context_t* context, uint32_t now,
++                           uint32_t release_event_tick)
++{
++    context->last_release_was_tap =
++        !context->gesture_moved && !context->gesture_blocked;
++    if (context->last_release_was_tap) {
++        context->last_tap_x = context->last_x;
++        context->last_tap_y = context->last_y;
++        context->tap_bounce_block_until =
++            release_event_tick + LV_K230_TOUCH_TAP_BOUNCE_BLOCK_MS;
++    }
++    context->release_event_tick = release_event_tick;
++    context->release_serial++;
++    if (context->gesture_moved) {
++        context->suppress_click_until =
++            now + LV_K230_TOUCH_POST_SWIPE_BLOCK_MS;
++    }
++#if LV_K230_TOUCH_GESTURE_DEBUG
++    printf("[touch-gesture] release serial=%u type=%s blocked=%d "
++           "start=(%d,%d) end=(%d,%d) tick=%u\n",
++           (unsigned)context->release_serial,
++           context->last_release_was_tap ? "TAP" : "SWIPE",
++           context->gesture_blocked, context->gesture_start_x,
++           context->gesture_start_y, context->last_x, context->last_y,
++           (unsigned)now);
++#endif
++}
++
++static void release_touch(lv_k230_touch_context_t* context,
++                          lv_indev_data_t* data, uint32_t now)
++{
++    if (context->last_state == LV_INDEV_STATE_PRESSED) {
++        uint32_t event_tick = context->pending_release_event_tick != 0
++                                  ? context->pending_release_event_tick
++                                  : context->last_input_event_tick;
++        if (event_tick == 0) event_tick = now;
++        finish_gesture(context, now, event_tick);
++    }
++    context->pending_release = false;
++    context->pending_release_event_tick = 0;
++    context->last_state = LV_INDEV_STATE_RELEASED;
++    context->active_track_id = -1;
++    data->state = LV_INDEV_STATE_RELEASED;
++    data->point.x = context->last_x;
++    data->point.y = context->last_y;
++}
++
++static void handle_no_event(lv_k230_touch_context_t* context,
++                            lv_indev_data_t* data)
++{
++    if (context->pending_release &&
++        lv_tick_elaps(context->pending_release_tick) >=
++            LV_K230_TOUCH_UP_SETTLE_MS) {
++        release_touch(context, data, data->timestamp);
++    }
++}
++
++bool lv_k230_touch_accept_click(void)
++{
++    lv_k230_touch_context_t* context = g_touch_context;
++    uint32_t now = lv_tick_get();
++
++    if (context == NULL ||
++        context->release_serial == context->consumed_serial) {
++#if LV_K230_TOUCH_GESTURE_DEBUG
++        printf("[touch-gesture] click rejected: no new release\n");
++#endif
++        return false;
++    }
++    context->consumed_serial = context->release_serial;
++    if (!context->last_release_was_tap ||
++        tick_is_before(now, context->suppress_click_until)) {
++#if LV_K230_TOUCH_GESTURE_DEBUG
++        printf("[touch-gesture] click rejected: swipe/block serial=%u\n",
++               (unsigned)context->release_serial);
++#endif
++        return false;
++    }
++    if (context->last_accepted_click_tick != 0 &&
++        lv_tick_elaps(context->last_accepted_click_tick) <
++            LV_K230_TOUCH_CLICK_DEBOUNCE_MS) {
++#if LV_K230_TOUCH_GESTURE_DEBUG
++        printf("[touch-gesture] click rejected: debounce serial=%u\n",
++               (unsigned)context->release_serial);
++#endif
++        return false;
++    }
++    /* Use the controller's event time as well as UI processing time. Camera
++     * start/capture calls can block LVGL long enough that a stale bounced
++     * DOWN/UP is processed hundreds of milliseconds later. It is still the
++     * same physical tap and must not toggle the control a second time. */
++    if (context->last_accepted_release_event_tick != 0 &&
++        (uint32_t)(context->release_event_tick -
++                   context->last_accepted_release_event_tick) <
++            LV_K230_TOUCH_TAP_BOUNCE_BLOCK_MS &&
++        abs(context->last_x - context->last_accepted_x) <=
++            LV_K230_TOUCH_TAP_BOUNCE_DISTANCE &&
++        abs(context->last_y - context->last_accepted_y) <=
++            LV_K230_TOUCH_TAP_BOUNCE_DISTANCE) {
++        return false;
++    }
++    context->last_accepted_click_tick = now;
++    context->last_accepted_release_event_tick = context->release_event_tick;
++    context->last_accepted_x = context->last_x;
++    context->last_accepted_y = context->last_y;
++#if LV_K230_TOUCH_GESTURE_DEBUG
++    printf("[touch-gesture] click accepted serial=%u tick=%u\n",
++           (unsigned)context->release_serial, (unsigned)now);
++#endif
++    return true;
++}
++
++/*
++ * Apply the coordinate convention advertised by the RT-Smart touch driver.
++ * Keep this behavior aligned with CanMV machine.Touch.
++ */
++static void lv_k230_touch_apply_driver_rotation(const lv_k230_touch_context_t* context,
++                                                int32_t* x, int32_t* y)
++{
++    int32_t point_x = *x;
++    int32_t point_y = *y;
++    int32_t range_x = context->info.range_x;
++    int32_t range_y = context->info.range_y;
++
++    switch (context->rotate) {
++    default:
++    case DRV_TOUCH_ROTATE_DEGREE_0:
++        break;
++    case DRV_TOUCH_ROTATE_DEGREE_90:
++        *x = range_y - point_y - 1;
++        *y = point_x;
++        break;
++    case DRV_TOUCH_ROTATE_DEGREE_180:
++        *x = range_x - point_x - 1;
++        *y = range_y - point_y - 1;
++        break;
++    case DRV_TOUCH_ROTATE_DEGREE_270:
++        *x = point_y;
++        *y = range_x - point_x - 1;
++        break;
++    case DRV_TOUCH_ROTATE_SWAP_XY:
++        *x = point_y;
++        *y = point_x;
++        break;
++    }
++}
++
++/*
++ * LVGL rotates pointer coordinates automatically in indev_pointer_proc().
++ * The driver rotation above already produces final logical coordinates, so
++ * feed LVGL the inverse display transform to avoid applying rotation twice.
++ */
++static void lv_k230_touch_compensate_lvgl_rotation(lv_indev_t* indev,
++                                                   int32_t* x, int32_t* y)
++{
++    lv_display_t* display = lv_indev_get_display(indev);
++    int32_t logical_x = *x;
++    int32_t logical_y = *y;
++    int32_t original_width;
++    int32_t original_height;
++
++    if (display == NULL) {
++        return;
++    }
++
++    original_width = lv_display_get_original_horizontal_resolution(display);
++    original_height = lv_display_get_original_vertical_resolution(display);
++
++    switch (lv_display_get_rotation(display)) {
++    default:
++    case LV_DISPLAY_ROTATION_0:
++        break;
++    case LV_DISPLAY_ROTATION_90:
++        *x = logical_y;
++        *y = original_height - logical_x - 1;
++        break;
++    case LV_DISPLAY_ROTATION_180:
++        *x = original_width - logical_x - 1;
++        *y = original_height - logical_y - 1;
++        break;
++    case LV_DISPLAY_ROTATION_270:
++        *x = original_width - logical_y - 1;
++        *y = logical_x;
++        break;
++    }
++}
++
++#if defined(CONFIG_BOARD_K230_CANMV_DONGSHANPI)
++/*
++ * Board-level touch mounting correction for DongshanPI + ST7701.
++ *
++ * After driver and LVGL rotation compensation, coordinates are expressed in
++ * the panel's native 480x640 space. The touch sensor on this board is mounted
++ * in the opposite orientation to that space, so both native axes must be
++ * mirrored. LVGL will subsequently rotate these coordinates by 270 degrees.
++ */
++static void lv_k230_touch_apply_board_mounting(lv_indev_t* indev,
++                                               int32_t* x, int32_t* y)
++{
++    lv_display_t* display = lv_indev_get_display(indev);
++
++    if (display == NULL) {
++        return;
++    }
++
++    int32_t width =
++        lv_display_get_original_horizontal_resolution(display);
++    int32_t height =
++        lv_display_get_original_vertical_resolution(display);
++
++    *x = width - *x - 1;
++    *y = height - *y - 1;
++}
++#endif
++
++static void lv_k230_touch_clamp(lv_indev_t* indev, int32_t* x, int32_t* y)
++{
++    lv_display_t* display = lv_indev_get_display(indev);
++    if (display == NULL) {
++        return;
++    }
++
++    int32_t width =
++        lv_display_get_original_horizontal_resolution(display);
++    int32_t height =
++        lv_display_get_original_vertical_resolution(display);
++    if (*x < 0) *x = 0;
++    if (*y < 0) *y = 0;
++    if (*x >= width) *x = width - 1;
++    if (*y >= height) *y = height - 1;
++}
++
+ /**
+  * @brief Touch input device read callback
+  * @param indev Pointer to input device
+@@ -37,31 +369,77 @@ static void lv_k230_touch_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
+     struct drv_touch_data touch_data[DRV_TOUCH_POINT_NUMBER_MAX];
+     int                   points_read;
+ 
+-    drv_touch_inst_t* touch_inst = (drv_touch_inst_t*)lv_indev_get_driver_data(indev);
++    lv_k230_touch_context_t* context =
++        (lv_k230_touch_context_t*)lv_indev_get_driver_data(indev);
+ 
+-    if (NULL == touch_inst) {
++    if (context == NULL || context->inst == NULL) {
+         printf("invalid touch instance\n");
+         return;
+     }
+ 
+-    /* Initialize data structure */
+-    data->state            = LV_INDEV_STATE_RELEASED;
+-    data->point.x          = 0;
+-    data->point.y          = 0;
++    /*
++     * drv_touch_read() is event based: zero points means "no new event",
++     * not necessarily "finger released". Preserve the previous sample first
++     * and change it only on a real event. A real controller UP enters the
++     * short release-debounce state below.
++     */
++    data->state            = context->last_state;
++    data->point.x          = context->last_x;
++    data->point.y          = context->last_y;
+     data->timestamp        = lv_tick_get();
+     data->continue_reading = false;
+ 
+     /* Read touch data from driver */
+-    points_read = drv_touch_read(touch_inst, touch_data, DRV_TOUCH_POINT_NUMBER_MAX);
++    points_read = drv_touch_read(context->inst, touch_data,
++                                 DRV_TOUCH_POINT_NUMBER_MAX);
+ 
+     if (points_read < 0) {
+-        /* Read error, keep released state */
++#if LV_K230_TOUCH_DEBUG
++        printf("[touch-debug] read error=%d tick=%u\n",
++               points_read, (unsigned)data->timestamp);
++#endif
++        handle_no_event(context, data);
+         return;
+     }
+ 
+     if (points_read > 0) {
+-        /* Process first touch point (multi-touch not fully supported yet) */
+-        struct drv_touch_data* point = &touch_data[0];
++        /* Track one finger consistently. MOVE samples may be coalesced, but
++         * DOWN/UP state is retained by the release state machine below. */
++        int selected = -1;
++        if (context->last_state == LV_INDEV_STATE_PRESSED &&
++            context->active_track_id >= 0) {
++            for (int i = 0; i < points_read; ++i) {
++                if (touch_data[i].track_id == context->active_track_id) {
++                    selected = i;
++                }
++            }
++        } else {
++            for (int i = 0; i < points_read; ++i) {
++                if (touch_data[i].event == DRV_TOUCH_EVENT_DOWN) {
++                    selected = i;
++                    break;
++                }
++            }
++            if (selected < 0) {
++                for (int i = 0; i < points_read; ++i) {
++                    if (touch_data[i].event == DRV_TOUCH_EVENT_MOVE) {
++                        selected = i;
++                        break;
++                    }
++                }
++            }
++        }
++        if (selected < 0) {
++            handle_no_event(context, data);
++            return;
++        }
++        struct drv_touch_data* point = &touch_data[selected];
++        uint32_t event_tick = point->timestamp != 0
++                                  ? point->timestamp
++                                  : data->timestamp;
++        context->last_input_event_tick = event_tick;
++
++        lv_indev_state_t previous_state = context->last_state;
+ 
+         /* Convert touch event to LVGL state */
+         switch (point->event) {
+@@ -70,25 +448,160 @@ static void lv_k230_touch_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
+             data->state = LV_INDEV_STATE_PRESSED;
+             break;
+         case DRV_TOUCH_EVENT_UP:
++            /*
++             * Some panels emit a short UP/DOWN pair while the finger is
++             * still moving. Keep LVGL pressed until the UP has remained
++             * stable for the settle window.  An UP received after LVGL has
++             * already completed the release is an orphan generated by the
++             * controller's noisy event burst; it must not become a new
++             * press by itself.
++             */
++            data->state = previous_state == LV_INDEV_STATE_PRESSED
++                              ? LV_INDEV_STATE_PRESSED
++                              : LV_INDEV_STATE_RELEASED;
++            break;
+         case DRV_TOUCH_EVENT_NONE:
+         default:
+-            data->state = LV_INDEV_STATE_RELEASED;
++            data->state = context->last_state;
+             break;
+         }
+ 
+-        /* Set coordinates */
+-        data->point.x = point->x_coordinate;
+-        data->point.y = point->y_coordinate;
++        /* Convert raw coordinates to the driver's logical convention. */
++        int32_t x = point->x_coordinate;
++        int32_t y = point->y_coordinate;
++#if LV_K230_TOUCH_DEBUG
++        int32_t raw_x = x;
++        int32_t raw_y = y;
++#endif
++
++        lv_k230_touch_apply_driver_rotation(context, &x, &y);
++#if LV_K230_TOUCH_DEBUG
++        int32_t driver_x = x;
++        int32_t driver_y = y;
++#endif
+ 
+-        /* Use timestamp from touch driver if available */
+-        if (point->timestamp != 0) {
+-            data->timestamp = point->timestamp;
++        lv_k230_touch_compensate_lvgl_rotation(indev, &x, &y);
++#if LV_K230_TOUCH_DEBUG
++        int32_t compensated_x = x;
++        int32_t compensated_y = y;
++#endif
++
++#if defined(CONFIG_BOARD_K230_CANMV_DONGSHANPI)
++        lv_k230_touch_apply_board_mounting(indev, &x, &y);
++#endif
++        lv_k230_touch_clamp(indev, &x, &y);
++
++        /* Some ST7701 touch controllers emit two or three complete DOWN/UP
++         * pairs for one stationary physical tap. Once the first tap has been
++         * released, discard only same-position pairs during the short bounce
++         * window. Different keys remain immediately responsive. */
++        if (context->suppressing_bounce &&
++            tick_is_before(event_tick,
++                           context->tap_bounce_block_until) &&
++            abs(x - context->last_tap_x) <=
++                LV_K230_TOUCH_TAP_BOUNCE_DISTANCE &&
++            abs(y - context->last_tap_y) <=
++                LV_K230_TOUCH_TAP_BOUNCE_DISTANCE) {
++#if LV_K230_TOUCH_DEBUG
++            printf("[touch-debug] bounce continuation event=%u raw=(%d,%d) "
++                   "tick=%u\n", (unsigned)point->event, raw_x, raw_y,
++                   (unsigned)data->timestamp);
++#endif
++            if (point->event == DRV_TOUCH_EVENT_UP)
++                context->suppressing_bounce = false;
++            data->state = LV_INDEV_STATE_RELEASED;
++            data->point.x = context->last_x;
++            data->point.y = context->last_y;
++            context->last_state = LV_INDEV_STATE_RELEASED;
++            return;
+         }
++        context->suppressing_bounce = false;
++        if ((point->event == DRV_TOUCH_EVENT_DOWN ||
++             point->event == DRV_TOUCH_EVENT_MOVE) &&
++            previous_state == LV_INDEV_STATE_RELEASED &&
++            tick_is_before(event_tick,
++                           context->tap_bounce_block_until) &&
++            abs(x - context->last_tap_x) <=
++                LV_K230_TOUCH_TAP_BOUNCE_DISTANCE &&
++            abs(y - context->last_tap_y) <=
++                LV_K230_TOUCH_TAP_BOUNCE_DISTANCE) {
++            context->suppressing_bounce = true;
++#if LV_K230_TOUCH_DEBUG
++            printf("[touch-debug] bounce DOWN suppressed final=(%d,%d) "
++                   "last-tap=(%d,%d) tick=%u deadline=%u\n",
++                   x, y, context->last_tap_x, context->last_tap_y,
++                   (unsigned)data->timestamp,
++                   (unsigned)context->tap_bounce_block_until);
++#endif
++            context->pending_release = false;
++            context->pending_release_event_tick = 0;
++            context->last_state = LV_INDEV_STATE_RELEASED;
++            data->state = LV_INDEV_STATE_RELEASED;
++            data->point.x = context->last_x;
++            data->point.y = context->last_y;
++            return;
++        }
++
++        if ((point->event == DRV_TOUCH_EVENT_DOWN ||
++             point->event == DRV_TOUCH_EVENT_MOVE) &&
++            previous_state == LV_INDEV_STATE_RELEASED) {
++            context->active_track_id = point->track_id;
++            reset_filter(context, x, y);
++            context->gesture_start_x = x;
++            context->gesture_start_y = y;
++            context->gesture_moved = false;
++            context->gesture_blocked =
++                tick_is_before(data->timestamp,
++                               context->suppress_click_until);
++        } else if ((point->event == DRV_TOUCH_EVENT_DOWN ||
++                    point->event == DRV_TOUCH_EVENT_MOVE) &&
++                   previous_state == LV_INDEV_STATE_PRESSED) {
++            context->pending_release = false;
++            context->pending_release_event_tick = 0;
++            filter_point(context, &x, &y);
++            int32_t dx = abs(x - context->gesture_start_x);
++            int32_t dy = abs(y - context->gesture_start_y);
++            if (dx >= LV_K230_TOUCH_DRAG_THRESHOLD ||
++                dy >= LV_K230_TOUCH_DRAG_THRESHOLD) {
++                context->gesture_moved = true;
++            }
++        } else if (point->event == DRV_TOUCH_EVENT_UP &&
++                   previous_state == LV_INDEV_STATE_PRESSED) {
++            /* The UP coordinate is often the noisiest sample. Keep the last
++             * filtered coordinate so CLICKED is delivered to the control the
++             * user actually pressed. */
++            x = context->last_x;
++            y = context->last_y;
++            int32_t dx = abs(x - context->gesture_start_x);
++            int32_t dy = abs(y - context->gesture_start_y);
++            if (dx >= LV_K230_TOUCH_DRAG_THRESHOLD ||
++                dy >= LV_K230_TOUCH_DRAG_THRESHOLD) {
++                context->gesture_moved = true;
++            }
++            context->pending_release = true;
++            context->pending_release_tick = data->timestamp;
++            context->pending_release_event_tick = event_tick;
++        }
++
++        data->point.x = x;
++        data->point.y = y;
++        context->last_x = x;
++        context->last_y = y;
++        context->last_state = data->state;
++
++#if LV_K230_TOUCH_DEBUG
++        printf("[touch-debug] event=%d state=%s raw=(%d,%d) "
++               "driver=(%d,%d) compensated=(%d,%d) final=(%d,%d) "
++               "points=%d tick=%u\n",
++               point->event,
++               data->state == LV_INDEV_STATE_PRESSED ? "PRESSED" : "RELEASED",
++               raw_x, raw_y, driver_x, driver_y,
++               compensated_x, compensated_y, x, y,
++               points_read, (unsigned)data->timestamp);
++#endif
+ 
+-        // /* Continue reading if there are more points */
+-        // if (points_read > 1) {
+-        //     data->continue_reading = true;
+-        // }
++    } else {
++        handle_no_event(context, data);
+     }
+ }
+ 
+@@ -96,15 +609,21 @@ static void event_cb(lv_event_t* e)
+ {
+     lv_event_code_t   code       = lv_event_get_code(e);
+     lv_indev_t*       indev      = (lv_indev_t*)lv_event_get_target(e);
+-    drv_touch_inst_t* touch_inst = (drv_touch_inst_t*)lv_indev_get_driver_data(indev);
++    lv_k230_touch_context_t* context =
++        (lv_k230_touch_context_t*)lv_indev_get_driver_data(indev);
+ 
+     switch (code) {
+     case LV_EVENT_DELETE: {
+-        if (touch_inst != NULL) {
++        if (context != NULL) {
+             printf("destroy touch instance\n");
++            if (g_touch_context == context) {
++                g_touch_context = NULL;
++            }
+ 
+             /* Destroy touch driver instance */
+-            drv_touch_inst_destroy(&touch_inst);
++            drv_touch_inst_destroy(&context->inst);
++            free(context);
++            lv_indev_set_driver_data(indev, NULL);
+         }
+     } break;
+     default: {
+@@ -120,37 +639,82 @@ static void event_cb(lv_event_t* e)
+  */
+ lv_indev_t* lv_k230_touch_init(int touch_id)
+ {
+-    lv_indev_t*       indev = NULL;
+-    drv_touch_inst_t* inst  = NULL;
+-    int               ret;
++    lv_indev_t*              indev   = NULL;
++    lv_k230_touch_context_t* context = NULL;
++    int                      ret;
++
++    context = (lv_k230_touch_context_t*)calloc(1, sizeof(*context));
++    if (context == NULL) {
++        printf("[lv_touch] failed to allocate touch context\n");
++        return NULL;
++    }
++    context->last_state = LV_INDEV_STATE_RELEASED;
++    context->active_track_id = -1;
+ 
+     /* Create touch driver instance */
+-    ret = drv_touch_inst_create(touch_id, &inst);
++    ret = drv_touch_inst_create(touch_id, &context->inst);
+     if (ret != 0) {
+         printf("[lv_touch] failed to create touch instance, ret=%d\n", ret);
++        free(context);
++        return NULL;
++    }
++
++    ret = drv_touch_get_info(context->inst, &context->info);
++    if (ret != 0) {
++        printf("[lv_touch] failed to get touch information, ret=%d\n", ret);
++        drv_touch_inst_destroy(&context->inst);
++        free(context);
+         return NULL;
+     }
+ 
++    context->rotate = DRV_TOUCH_ROTATE_DEGREE_0;
++    ret = drv_touch_get_default_rotate(context->inst, &context->rotate);
++    if (ret != 0) {
++        printf("[lv_touch] failed to get default rotation, use 0, ret=%d\n",
++               ret);
++        context->rotate = DRV_TOUCH_ROTATE_DEGREE_0;
++    }
++
+     /* Create LVGL input device */
+     indev = lv_indev_create();
+     if (indev == NULL) {
+         printf("[lv_touch] failed to create LVGL input device\n");
+-        drv_touch_inst_destroy(&inst);
++        drv_touch_inst_destroy(&context->inst);
++        free(context);
+         return NULL;
+     }
+ 
+     /* Set input device type to touch/pointer */
+     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
++    /* Do not let coordinate jitter start scrolling a page that will then
++     * receive a click. The gesture classifier uses the identical boundary. */
++    lv_indev_set_scroll_limit(indev, LV_K230_TOUCH_DRAG_THRESHOLD);
+ 
+     /* Set read callback */
+     lv_indev_set_read_cb(indev, lv_k230_touch_read_cb);
+ 
+-    /* Store touch instance as driver data for cleanup */
+-    lv_indev_set_driver_data(indev, inst);
++    /*
++     * Pointer input should be sampled more often than the display refresh.
++     * LVGL otherwise inherits LV_DEF_REFR_PERIOD (33 ms), which is visibly
++     * behind the finger and also stretches the release-settle window.
++     */
++    lv_timer_t* read_timer = lv_indev_get_read_timer(indev);
++    if (read_timer != NULL) {
++        lv_timer_set_period(read_timer, LV_K230_TOUCH_READ_PERIOD_MS);
++    }
++
++    /* Store touch context as driver data for conversion and cleanup. */
++    lv_indev_set_driver_data(indev, context);
++    g_touch_context = context;
+ 
+     lv_indev_add_event_cb(indev, event_cb, LV_EVENT_DELETE, NULL);
+ 
+-    printf("[lv_touch] touch input device initialized successfully\n");
++    printf("[lv_touch] initialized: range=%ux%u, driver rotation=%d, "
++           "display rotation=%d\n",
++           context->info.range_x, context->info.range_y, context->rotate,
++           lv_indev_get_display(indev) != NULL
++               ? (int)lv_display_get_rotation(lv_indev_get_display(indev))
++               : -1);
+ 
+     return indev;
+ }
+diff --git a/3rd-party/lvgl/port/lv_k230_input_touch.h b/3rd-party/lvgl/port/lv_k230_input_touch.h
+index c1bee295297ed1f71b9296161de9b50987f095bb..ffeed025ec1d5e8d6ccaea4bae377785abccdb69 100644
+--- a/3rd-party/lvgl/port/lv_k230_input_touch.h
++++ b/3rd-party/lvgl/port/lv_k230_input_touch.h
+@@ -31,6 +31,14 @@ extern "C" {
+ #include "drv_touch.h"
+ #include "src/indev/lv_indev.h"
+ 
++/*
++ * Keep LVGL scrolling, the driver gesture classifier and application tap
++ * guards on one boundary.  A smaller LVGL scroll limit than the swipe/tap
++ * limit creates a range where one gesture both moves the page and clicks a
++ * control when released.
++ */
++#define LV_K230_TOUCH_DRAG_THRESHOLD 16
++
+ /**
+  * @brief Initialize LVGL touch input device
+  * @param touch_id Touch interface ID (0 to KD_HARD_TOUCH_MAX_NUM-1)
+@@ -38,6 +46,12 @@ extern "C" {
+  */
+ lv_indev_t* lv_k230_touch_init(int touch_id);
+ 
++/**
++ * Return true exactly once for a completed, stationary touch gesture.
++ * Swipe releases, duplicate UP events and bounce-generated clicks are false.
++ */
++bool lv_k230_touch_accept_click(void);
++
+ #ifdef __cplusplus
+ } /*extern "C"*/
+ #endif
+diff --git a/rtsmart_hal/drivers/touch/drv_touch.c b/rtsmart_hal/drivers/touch/drv_touch.c
+index c2b6cf204045228265fe411c67da652f540a1dd3..dce9545a5d01361d5dc8ad4df609f6c7790ed561 100644
+--- a/rtsmart_hal/drivers/touch/drv_touch.c
++++ b/rtsmart_hal/drivers/touch/drv_touch.c
+@@ -180,6 +180,11 @@ int drv_touch_read(drv_touch_inst_t* inst, struct drv_touch_data* touch_data, in
+     /* Perform read operation */
+     ssize_t bytes_read = read(inst->fd, touch_data, max_points * sizeof(struct drv_touch_data));
+     if (bytes_read < 0) {
++        /* O_NONBLOCK reports an empty event queue as EAGAIN. Treat it as
++         * "no new sample" so the LVGL port can retain its previous state. */
++        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
++            return 0;
++        }
+         return -2;
+     }
+ 

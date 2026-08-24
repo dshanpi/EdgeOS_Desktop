@@ -86,7 +86,8 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 │   └── ota_*                  HTTPS、清单验签与 A/B OTA
 ├── uart/                      UART Lab、VAXP 与 AI 数据流
 ├── third_party/vaxp/          随仓库发布的 VAXP 1.0 协议头文件
-├── tools/                     CanMV SDK 集成脚本
+├── tools/                     SDK 补丁、兼容性检查与应用集成脚本
+├── sdk/                       锁定版本的可复现 SDK 补丁集与清单
 ├── skill/                     DshanPI EdgeOS UI 设计 Skill
 ├── Kconfig
 └── Makefile
@@ -139,17 +140,22 @@ cd /path/to/canmv_k230/src/applications
 git clone https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 git lfs pull
+./tools/apply_sdk_patches.sh --check
+./tools/apply_sdk_patches.sh --apply
 ./tools/integrate_canmv_sdk.sh
 cd ../../..
-make k230_canmv_dongshanpi_defconfig
-make menuconfig
+make k230_canmv_dongshanpi_edgeos_defconfig
+./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
-进入 `Applications Configuration` 后启用 `DshanPI EdgeOS Desktop`。SDK 会从本仓库的 Kconfig 自动发现菜单项；集成脚本则根据当前目录名幂等更新父目录的 `apps.mk`，将该选项映射到实际构建目录。菜单发现和参与构建是两个独立步骤，因此在新的 SDK 中或重置 `apps.mk` 后需要重新运行脚本。
+专用配置 `k230_canmv_dongshanpi_edgeos_defconfig` 会自动启用 `DshanPI EdgeOS Desktop`，无需再手工修改配置。需要检查或调整功能时可另外执行 `make menuconfig`；此时应用会显示在 `Applications Configuration` 下。SDK 从本仓库的 Kconfig 发现菜单项，集成脚本则根据当前目录名幂等更新父目录的 `apps.mk`，将该选项映射到实际构建目录。菜单发现和参与构建是两个独立步骤，因此在新的 SDK 中或重置 `apps.mk` 后需要重新运行集成脚本。
 
 仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。
 
-> **SDK 兼容性：** 集成脚本只更新 `apps.mk` 构建注册，不会安装 SDK API 补丁。匹配的 DshanPI EdgeOS SDK 至少需要安装播放器的 `kplayer.h` 和 `libmp4_player.a`（包含 `kd_player_seek()`），并提供触摸点击过滤、A/B OTA 状态、媒体镜像与系统版本接口。纯上游 CanMV K230 SDK 不包含全部这些扩展，本仓库目前也未包含这组 SDK 补丁。在未打补丁的 SDK 上，EdgeOS 应用编译通常会先报 `fatal error: kplayer.h: No such file or directory`，后续还可能报缺少 `lv_k230_touch_accept_click()`、`k230_ota_get_status()` 等接口。
+> **SDK 兼容性：** 本仓库的 [`sdk/`](sdk/) 提供了可复现的方案 A 补丁集，包括播放器、触摸点击过滤、A/B OTA、媒体镜像、系统版本和专用产品配置等 SDK 扩展。补丁严格锁定 [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml) 记录的官方上游版本，不用于任意版本的 SDK：`--check` 会在不改动源码的情况下检查版本、工作区和补丁完整性，全部预检通过后才可用 `--apply` 一次性应用这组相互依赖的补丁。不要只挑选其中某个补丁，也不要在版本不匹配时强制套用。补丁组成、固定版本、校验值、恢复与排错方法见 [`sdk/README.md`](sdk/README.md)。
+
+EdgeOS Desktop 不依赖 WebRTC，专用 defconfig 已将其禁用，以免引入与本产品无关的依赖；OTA 使用的 Mbed TLS 等功能仍会正常启用。
 
 子应用构建脚本默认从 `$HOME/.kendryte/k230_toolchains/` 查找工具链。如工具链安装在其他位置，请将其 `bin` 目录通过 `K230_TOOLCHAIN_BIN` 指定：
 
@@ -159,11 +165,11 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 
 ## 构建固件
 
-完成上一节的 defconfig 和 menuconfig 配置并启用 EdgeOS Desktop 后，在 SDK 根目录构建：
+完成上一节的 SDK 补丁、集成、专用 defconfig 和兼容性检查后，在 SDK 根目录构建（如果已经执行了上一节命令块的最后一行，则无需重复）：
 
 ```bash
 cd /path/to/canmv_k230
-bash -o pipefail -c 'time make 2>&1 | tee log.txt'
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
 部分 SDK 的 `make log` 在内部使用 `make | tee` 但没有启用 `pipefail`，因此内层编译失败时命令仍可能返回 0。上面的命令既保留日志，也会正确传递失败状态。如果整包构建在进入 EdgeOS 之前失败，可以运行 `make app` 单独诊断应用链路；日志出现 `[BUILD] applications EdgeOS_Desktop` 才表示已进入本仓库的构建。
@@ -171,19 +177,19 @@ bash -o pipefail -c 'time make 2>&1 | tee log.txt'
 构建成功后，日志末尾应出现：
 
 ```text
-Build K230 done, board k230_canmv_dongshanpi, config k230_canmv_dongshanpi_defconfig
+Build K230 done, board k230_canmv_dongshanpi, config k230_canmv_dongshanpi_edgeos_defconfig
 ```
 
 典型产物位于：
 
 ```text
-output/k230_canmv_dongshanpi_defconfig/
-├── DshanPI_CanMV_V3_<系统版本>.img
-├── DshanPI_CanMV_V3_<系统版本>_ota.kdimg
+output/k230_canmv_dongshanpi_edgeos_defconfig/
+├── DshanPI_EdgeOS_Desktop_v0.7.5.img
+├── DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg
 └── ...对应的 .gz 与摘要文件
 ```
 
-系统版本由 SDK 板级文件 `boards/k230_canmv_dongshanpi/system-version.txt` 管理，不应在 UI 或发布脚本中重复维护。
+当前产品版本为 `v0.7.5`，由 SDK 板级文件 `boards/k230_canmv_dongshanpi/system-version.txt` 统一管理，不应在 UI 或发布脚本中重复维护。
 
 ### 仅构建应用
 
@@ -265,3 +271,5 @@ OTA 发布顺序应为：先上传 KDIMG，再上传 `latest.json.sig`，最后�
 仓库根目录中的原创代码按 [MIT License](LICENSE) 发布。
 
 `apps/ai_demo/`、模型、字体、图片、音频、预编译库以及从 CanMV K230 SDK 或其他上游项目引入的文件，可能受各自许可证、模型条款或再分发限制约束。发布者和贡献者必须保留上游版权声明，并在商业分发或重新托管大型资源前逐项确认授权；根目录 MIT License 不会覆盖第三方材料原有的许可条件。
+
+`sdk/` 中的补丁保留其所修改上游项目和源文件的原有版权与许可证；仓库根目录的 MIT License 不会对这些上游补丁重新许可。
