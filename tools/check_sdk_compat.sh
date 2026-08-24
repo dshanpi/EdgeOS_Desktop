@@ -106,8 +106,10 @@ if [[ -f $archive ]]; then
         nm_tool=$(command -v riscv64-unknown-linux-musl-nm || true)
     fi
     if [[ -n $nm_tool ]]; then
-        "$nm_tool" -g --defined-only "$archive" | grep -Eq \
-            '[[:space:]]kd_player_seek$' ||
+        nm_output=
+        nm_output=$("$nm_tool" -g --defined-only "$archive") ||
+            fail "failed to inspect libmp4_player.a with $nm_tool"
+        grep -Eq '[[:space:]]kd_player_seek$' <<<"$nm_output" ||
             fail "libmp4_player.a does not export kd_player_seek"
     else
         printf 'Warning: cross nm not found; archive symbol check skipped.\n' >&2
