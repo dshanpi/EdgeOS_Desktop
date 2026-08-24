@@ -1,0 +1,46 @@
+From b3014371df60fd7c02399ce27fed1b5080ea185c Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 01:33:40 -0400
+Subject: [PATCH] fix(images): record actual patched project revisions
+
+---
+ tools/gen_image.sh | 21 +++++++++------------
+ 1 file changed, 9 insertions(+), 12 deletions(-)
+
+diff --git a/tools/gen_image.sh b/tools/gen_image.sh
+index a811081..fd44642 100755
+--- a/tools/gen_image.sh
++++ b/tools/gen_image.sh
+@@ -6,20 +6,17 @@ gen_repo_info()
+ {
+ 	pushd ${SDK_SRC_ROOT_DIR} > /dev/null
+ 
+-	input_data=`repo info`
+ 	temp_file=${SDK_BUILD_DIR}/repo_info.tmp
+ 
+-	> $temp_file
+-	# Process the input data
+-	echo "$input_data" | awk '
+-	/^Project:/ {project=$2}
+-	/Current revision:/ {
+-		revision=$3
+-		# Extract last segment of the project path
+-		split(project, parts, "/")
+-		last_segment=parts[length(parts)]
+-		print last_segment "=" revision >> "'$temp_file'"
+-	}'
++	# `repo info` reports the manifest revision even when a project contains
++	# the reviewed EdgeOS patch commits. Record each actual worktree HEAD so
++	# revision.txt describes the source that produced this image.
++	if ! repo forall -c \
++		'printf "%s=%s\n" "${REPO_PROJECT##*/}" "$(git rev-parse HEAD)"' \
++		> "$temp_file"; then
++		echo "Failed to collect exact SDK project revisions" >&2
++		exit 1
++	fi
+ 
+ 	sed 's/-/_/g' $temp_file > $repo_info_file
+ 
+-- 
+2.25.1
+

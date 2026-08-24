@@ -1,0 +1,43 @@
+From 6b281f7aee3836aa1c306de5d1a6a6a7065b1dc6 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 01:34:26 -0400
+Subject: [PATCH] fix(images): fail closed on packaging errors
+
+---
+ tools/gen_image.sh | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/tools/gen_image.sh b/tools/gen_image.sh
+index fd44642..12ca293 100755
+--- a/tools/gen_image.sh
++++ b/tools/gen_image.sh
+@@ -31,7 +31,7 @@ gen_image()
+ 	local image="$2";
+ 
+     if ! python3 ${SDK_TOOLS_DIR}/genimage.py --rootpath "${SDK_BUILD_IMAGES_DIR}" --outputpath "${SDK_BUILD_DIR}" --config "${config}"; then
+-        echo "Error: Failed to generate OTA image from ${config}!" >&2
++        echo "Error: Failed to generate firmware image from ${config}!" >&2
+         return 1
+     fi
+ 
+@@ -76,7 +76,10 @@ gen_ota_image()
+     # 清理上一次生成的 *.kdimg，避免被 find 误选
+     rm -f ${SDK_BUILD_DIR}/*.kdimg 2>/dev/null || true
+ 
+-    python3 ${SDK_TOOLS_DIR}/genimage.py --rootpath "${SDK_BUILD_IMAGES_DIR}" --outputpath "${SDK_BUILD_DIR}" --config "${config}"
++    if ! python3 ${SDK_TOOLS_DIR}/genimage.py --rootpath "${SDK_BUILD_IMAGES_DIR}" --outputpath "${SDK_BUILD_DIR}" --config "${config}"; then
++        echo "Error: Failed to generate OTA image from ${config}!" >&2
++        return 1
++    fi
+ 
+     # 只寻找 kdimg（文件名由 cfg 中的 image 名决定，这里不依赖固定前缀）
+     generated_image=$(find ${SDK_BUILD_DIR} -maxdepth 1 -type f -name "*.kdimg" | head -n 1)
+@@ -213,4 +216,4 @@ if [ -f "${system_version_file}" ]; then
+ fi
+ 
+ gen_ota_image "${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_OTA_IMAGE_CFG_FILE}" "${image_name}_ota" || exit 1
+-gen_image ${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_IMAGE_CFG_FILE} $image_name;
++gen_image "${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_IMAGE_CFG_FILE}" "$image_name" || exit 1
+-- 
+2.25.1
+

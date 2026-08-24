@@ -1,0 +1,66 @@
+From 1c89c569083ecea8c91d7d65e28667ea1984c03a Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 01:19:53 -0400
+Subject: [PATCH 3/4] fix(images): size EdgeOS slots for bundled assets
+
+---
+ boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg | 4 ++--
+ boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg     | 6 +++---
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
+index 737f53e..1b3ac15 100644
+--- a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
++++ b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos-ota.cfg
+@@ -3,7 +3,7 @@ image app-ota.vfat {
+ 		label = "APP_OTA"
+ 		extraargs = " -F 32 -s 2 "
+ 	}
+-	size = 512M
++	size = 1G
+ 	temporary = true
+ 	mountpoint = "sdcard"
+ }
+@@ -35,7 +35,7 @@ image sysimage-sdcard-ota.kdimg {
+ 	partition app {
+ 		in-partition-table = false
+ 		offset = 50M
+-		size = 512M
++		size = 1G
+ 		image = "app-ota.vfat"
+ 	}
+ }
+diff --git a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
+index c45ec8e..93cede8 100644
+--- a/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
++++ b/boards/k230_canmv_dongshanpi/genimage-sdcard-edgeos.cfg
+@@ -13,7 +13,7 @@ image app-a.vfat {
+ 		label = "APP_A"
+ 		extraargs = " -F 32 -s 2 "
+ 	}
+-	size = 512M
++	size = 1G
+ 	temporary = true
+ 	mountpoint = "sdcard"
+ }
+@@ -23,7 +23,7 @@ image app-b.vfat {
+ 		label = "APP_B"
+ 		extraargs = " -F 32 -s 2 "
+ 	}
+-	size = 512M
++	size = 1G
+ 	temporary = true
+ 	mountpoint = "sdcard"
+ }
+@@ -110,7 +110,7 @@ image sysimage-sdcard.img {
+ 
+ 	partition app_b {
+ 		partition-type = 0xc
+-		offset = 642M
++		offset = 1154M
+ 		image = "app-b.vfat"
+ 	}
+ }
+-- 
+2.25.1
+

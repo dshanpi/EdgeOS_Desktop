@@ -1,2 +1,6 @@
 0001-build-support-product-OTA-layouts-and-versions.patch
 0002-boards-add-isolated-EdgeOS-A-B-product-layout.patch
+0003-fix-images-size-EdgeOS-slots-for-bundled-assets.patch
+0004-fix-images-propagate-OTA-generation-failures.patch
+0005-fix-images-record-actual-patched-project-revisions.patch
+0006-fix-images-fail-closed-on-packaging-errors.patch

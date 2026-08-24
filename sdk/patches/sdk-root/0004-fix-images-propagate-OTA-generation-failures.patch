@@ -1,0 +1,46 @@
+From 88b43531f14eead83ff8f7dc4dfd492c111be322 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 01:23:12 -0400
+Subject: [PATCH 4/4] fix(images): propagate OTA generation failures
+
+---
+ tools/gen_image.sh | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/tools/gen_image.sh b/tools/gen_image.sh
+index b652577..a811081 100755
+--- a/tools/gen_image.sh
++++ b/tools/gen_image.sh
+@@ -33,7 +33,10 @@ gen_image()
+ 	local config="$1";
+ 	local image="$2";
+ 
+-    python3 ${SDK_TOOLS_DIR}/genimage.py --rootpath "${SDK_BUILD_IMAGES_DIR}" --outputpath "${SDK_BUILD_DIR}" --config "${config}"
++    if ! python3 ${SDK_TOOLS_DIR}/genimage.py --rootpath "${SDK_BUILD_IMAGES_DIR}" --outputpath "${SDK_BUILD_DIR}" --config "${config}"; then
++        echo "Error: Failed to generate OTA image from ${config}!" >&2
++        return 1
++    fi
+ 
+     # Find the generated image file (could be .img or .kdimg)
+     generated_image=$(find ${SDK_BUILD_DIR} -maxdepth 1 -type f \( -name "sysimage-sdcard.kdimg" -o -name "sysimage-sdcard.img" -o -name "sysimage-spinand.kdimg" -o -name "sysimage-spinor.kdimg"  \) | head -n 1)
+@@ -82,8 +85,8 @@ gen_ota_image()
+     generated_image=$(find ${SDK_BUILD_DIR} -maxdepth 1 -type f -name "*.kdimg" | head -n 1)
+ 
+     if [ -z "$generated_image" ]; then
+-        echo "Error: No kdimg image file found for config ${config}!"
+-        return
++        echo "Error: No kdimg image file found for config ${config}!" >&2
++        return 1
+     fi
+ 
+     generated_image_name=$(basename "$generated_image")
+@@ -212,5 +215,5 @@ if [ -f "${system_version_file}" ]; then
+     echo "Product firmware image name '${image_name}'"
+ fi
+ 
+-gen_ota_image "${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_OTA_IMAGE_CFG_FILE}" "${image_name}_ota"
++gen_ota_image "${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_OTA_IMAGE_CFG_FILE}" "${image_name}_ota" || exit 1
+ gen_image ${SDK_BOARD_DIR}/${CONFIG_BOARD_GEN_IMAGE_CFG_FILE} $image_name;
+-- 
+2.25.1
+

@@ -11,20 +11,25 @@ change is reviewable and reproducible from an official CanMV K230 baseline.
 
 ## Fresh checkout / 全新检出
 
-The safest workflow is a fresh SDK checkout made from the exact official
-manifest commit mirrored by `upstream-lock.xml`:
+The safest workflow uses the EdgeOS release tag itself as the repo manifest
+source. This makes `repo sync` consume the 24 immutable revisions in
+`upstream-lock.xml`, rather than the moving branches in the upstream CanMV
+manifest:
 
-最安全的做法是使用 `upstream-lock.xml` 所对应的官方 manifest 精确提交创建
-全新 SDK：
+最安全的做法是直接将 EdgeOS 发布标签作为 repo manifest 源。这样 `repo sync`
+会使用 `upstream-lock.xml` 中 24 个不可变 revision，而不是 CanMV 上游 manifest
+里的浮动分支：
 
 ```bash
 mkdir canmv_k230 && cd canmv_k230
-repo init -u https://github.com/canmv-k230/manifest.git \
-  -b d207027db3ae457cd43629c80b8a42e3b79fd51a
+repo init -u https://github.com/dshanpi/EdgeOS_Desktop.git \
+  -b edgeos-sdk-v1.0.0 \
+  -m sdk/manifests/upstream-lock.xml
 repo sync -c -j"$(nproc)"
 
 cd src/applications
-git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+git clone --branch edgeos-sdk-v1.0.0 \
+  https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 git lfs pull
 ./tools/apply_sdk_patches.sh --check
@@ -38,24 +43,27 @@ bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 ```
 
 `--check` never modifies an SDK. It verifies the complete SHA-256 inventory,
-requires the exact base revisions, rejects unexpected tracked changes or an
-unfinished Git operation, applies every series in temporary shared clones,
-and compares the resulting Git tree IDs with `manifest.json`. `--apply` repeats
-that full preflight before changing any project. Re-running either command is
-safe: projects already at the expected patched tree are verified and skipped
-during the real apply phase.
+all 24 locked SDK projects, exact base revisions, deterministic patched commit
+and tree IDs, worktree state, unfinished Git operations, and untracked paths
+that would collide with patch additions. Every series is applied in a
+temporary shared clone before any real project changes. `--apply` repeats that
+full preflight before changing any project. Re-running either command is safe:
+projects already at the expected patched tree are verified and skipped.
 
-`--check` 不修改 SDK。它会校验完整 SHA-256 清单、确认精确基线、拒绝意外的
-已跟踪改动或未结束的 Git 操作，并在临时共享克隆中实际应用每组补丁，再将
-结果 tree ID 与 `manifest.json` 比较。`--apply` 只有在全部预演成功后才开始
-修改项目；重复执行时会验证并跳过已经处于目标 tree 的项目。
+`--check` 不修改 SDK。它会校验完整 SHA-256 清单、24 个锁定项目、精确基线、
+确定性的补丁提交与 tree ID、工作区状态、未结束的 Git 操作，以及会与新增
+补丁路径冲突的未跟踪文件。所有补丁都会先在临时共享克隆中实际应用；
+`--apply` 只有在全部预演成功后才修改真实项目。重复执行时会验证并跳过已经
+处于目标 tree 的项目。
 
 The scripts never run `repo sync`, `git fetch`, `git stash`, `git reset`, or
-`git clean`. Untracked SDK build products are ignored by Git's normal tracked
-cleanliness test, but no source change is silently overwritten.
+`git clean`. Unrelated untracked build products are left alone; any untracked
+or ignored path that would be replaced by a patch is rejected before the first
+real `git am`.
 
 脚本不会自行运行 `repo sync`、`git fetch`、`git stash`、`git reset` 或
-`git clean`，也不会静默覆盖用户源码改动。
+`git clean`。无关的未跟踪构建产物会保留；若未跟踪或已忽略路径会被补丁
+覆盖，脚本会在第一次真实 `git am` 前拒绝执行。
 
 ## Patch inventory / 补丁组成
 
@@ -68,7 +76,7 @@ tree ID 见 [`manifest.json`](manifest.json)。
 
 | Project path | Official base | Purpose |
 | --- | --- | --- |
-| `.` | `3f18247b4863` | Dedicated defconfig, product version, A/B image layout |
+| `.` | `3f18247b4863` | Dedicated defconfig, product version, 1 GiB A/B image layout |
 | `src/rtsmart/libs` | `4964b24f0208` | Touch, OTA and PMU APIs; fonts and LVGL opt-in |
 | `src/rtsmart/libs/3rd-party/lvgl/lvgl` | `c210a4efa2f4` | TJPGD 1/8 thumbnail decoding |
 | `src/rtsmart/mpp` | `631ca8660b31` | Camera mirror, source MP4 player/seek, H.264 FLV muxer |
@@ -114,6 +122,11 @@ SDK—from `upstream-lock.xml`, then run the verified apply again.
 - The factory image contains identical `app_a` and `app_b` filesystems. OTA
   packages carry `rtt`, `rtapp`, and `app` together and activate the inactive
   slot only after all three payloads pass readback SHA-256 verification.
+- The image pre-creates `bin`, `app_a`, and `app_b`. On the first boot,
+  RT-Smart creates the fourth `/data` partition from the remaining media,
+  reboots once to rescan the MBR, then formats and mounts it. Use an 8 GB or
+  larger microSD card, do not interrupt this first-boot sequence, and keep
+  `/data` free space larger than the roughly 1.02 GiB uncompressed OTA KDIMG.
 - Product version `v0.7.5` is stored in
   `boards/k230_canmv_dongshanpi/system-version.txt` and is used by both the UI
   header and firmware filenames.

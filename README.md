@@ -154,7 +154,7 @@ bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 
 仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。
 
-> **SDK 兼容性：** 本仓库的 [`sdk/`](sdk/) 提供了可复现的方案 A 补丁集，包括播放器、触摸点击过滤、A/B OTA、媒体镜像、系统版本和专用产品配置等 SDK 扩展。补丁严格锁定 [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml) 记录的官方上游版本，不用于任意版本的 SDK：`--check` 会在不改动源码的情况下检查版本、工作区和补丁完整性，全部预检通过后才可用 `--apply` 一次性应用这组相互依赖的补丁。不要只挑选其中某个补丁，也不要在版本不匹配时强制套用。补丁组成、固定版本、校验值、恢复与排错方法见 [`sdk/README.md`](sdk/README.md)。
+> **SDK 兼容性：** 本仓库的 [`sdk/`](sdk/) 提供了可复现的方案 A 补丁集，包括播放器、触摸点击过滤、A/B OTA、媒体镜像、系统版本和专用产品配置等 SDK 扩展。补丁严格锁定 [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml) 记录的 24 个官方上游版本，不用于任意版本的 SDK：`--check` 会在不改动源码的情况下检查完整锁定版本、工作区、补丁完整性和确定性重放结果，全部预检通过后才可用 `--apply` 一次性应用这组相互依赖的补丁。不要只挑选其中某个补丁，也不要在版本不匹配时强制套用。创建全新 SDK 时不要从浮动 CanMV 分支直接同步；请使用 [`sdk/README.md`](sdk/README.md) 中以 `edgeos-sdk-v1.0.0` 标签作为 repo manifest 源的锁定流程。
 
 EdgeOS Desktop 不依赖 WebRTC，专用 defconfig 已将其禁用，以免引入与本产品无关的依赖；OTA 使用的 Mbed TLS 等功能仍会正常启用。
 

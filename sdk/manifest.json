@@ -9,8 +9,8 @@
       "name": "kendryte/k230_rtos_sdk",
       "path": ".",
       "base_revision": "3f18247b48635f83f439bc13e564ce90d8655d18",
-      "patched_revision": "e01e4b196b4854bd11ceda5f5d079fcdd4777a0c",
-      "patched_tree": "b0c1746a880487bd60e7e98484bba70d55a51a54",
+      "patched_revision": "0fe500c3ce6d4b755e4f5bb4e4a32945ec344f68",
+      "patched_tree": "3f13d880ccb53a43561efda8296d86d8d24c0c26",
       "series": "sdk/patches/sdk-root/series"
     },
     {
@@ -18,7 +18,7 @@
       "name": "canmv-k230/k230_rtsmart_lib",
       "path": "src/rtsmart/libs",
       "base_revision": "4964b24f020825216a3095ba7ba998ae6e76bce7",
-      "patched_revision": "4d0e5af7739d08a812de83da68642aeb6b29fcd7",
+      "patched_revision": "006e9008616e6e08bd16418a1202aaf8f0422d6f",
       "patched_tree": "3c2e88bc48e2130e41dfef25e41c8dc34bcc86e9",
       "series": "sdk/patches/rtsmart-libs/series"
     },
@@ -27,7 +27,7 @@
       "name": "lvgl/lvgl",
       "path": "src/rtsmart/libs/3rd-party/lvgl/lvgl",
       "base_revision": "c210a4efa2f474d0223d3e91c79963e1ae4ac0bc",
-      "patched_revision": "2f1515d279b67dff5259c30fd2f0eda87041d21d",
+      "patched_revision": "9157e4529b8cfe71f3858e116b0dbd0c22d3b316",
       "patched_tree": "3d118fd0f624e11bf8e0cea88b099e0b58db1966",
       "series": "sdk/patches/lvgl/series"
     },
@@ -36,7 +36,7 @@
       "name": "canmv-k230/mpp",
       "path": "src/rtsmart/mpp",
       "base_revision": "631ca8660b3139982a37a9e1dd5b3f9f7b8af0ad",
-      "patched_revision": "ca14981254209b0cfdc0d0b78270f98e2d8a3028",
+      "patched_revision": "e12646b76b309990fde9217a3002db62b39d8828",
       "patched_tree": "2353278396c7984a3d179524389a7cb2bd444b86",
       "series": "sdk/patches/mpp/series"
     },
@@ -45,7 +45,7 @@
       "name": "canmv-k230/rtsmart",
       "path": "src/rtsmart/rtsmart",
       "base_revision": "650f165630753c29cf85f8e64ebf75196d7a5726",
-      "patched_revision": "132d4ad112ccd9ac1fef0312da83f6b2847a6e08",
+      "patched_revision": "4153c2cfed76b2aa9b1ba97ba909347fe8513905",
       "patched_tree": "cb6b4670f4bd6748d07ddfbae79e1e6df7ef5a10",
       "series": "sdk/patches/rtsmart/series"
     },
@@ -54,7 +54,7 @@
       "name": "canmv-k230/u-boot",
       "path": "src/uboot/uboot",
       "base_revision": "56a131d12108009012eca0204e7dd610a3e7d618",
-      "patched_revision": "e02667f8992cfcbaf421b131d0c44b563f3463c9",
+      "patched_revision": "76b702b68dca11b9d061bc9eefa5b63492db9859",
       "patched_tree": "305aedce2f17e13e3804c8da798c8ab3539adaa0",
       "series": "sdk/patches/u-boot/series"
     }
