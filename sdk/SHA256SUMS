@@ -1,5 +1,5 @@
 4792b9e501775ddecd6131eab35bab12d51105dbbea083be200d312bc46c01f5  sdk/README.md
-cd979d68018ea6f10c9afb3894360566b350fa0d82723c9db1851cee1d1ac08e  sdk/manifest.json
+831c5fe1527cae0d3814f1102a7ea2034ac6cd4022d5b9e73a42f41cf3d13d36  sdk/manifest.json
 b7c2de6681fa71e1018e323bad57e57523a486d02c3c6e3879e00389ff91f966  sdk/manifests/upstream-lock.xml
 1ab6c4419a51690164598ef433b11f1f8b26e3d6f81e96a05e363c5e55533d7b  sdk/patches/lvgl/0001-feat-tjpgd-enable-native-thumbnail-scaling.patch
 374675f57f3a8fee1514424dbac15a82c895f0adb08e9eef222b324fd1cecc55  sdk/patches/lvgl/series
@@ -12,7 +12,8 @@ f3d783eeed3dea99256f0d2ddb01aea36673d596958146553fe2c059ed6c4b70  sdk/patches/mp
 33bb2817b8572434969c1e143fc3dee93c813c9890a8aa72167e0c0f6b82dac5  sdk/patches/rtsmart-libs/0003-feat-pmu-expose-reboot-control-APIs.patch
 56c637ccee2cc767cd5b4b24fb29e2be89e43de7cbf6a3820940a7e273a8e979  sdk/patches/rtsmart-libs/0004-feat-kconfig-allow-product-LVGL-with-CanMV.patch
 4da86e40f2f60dbf4cf3d87052e29ba8fa20332c9ce6d67bb3fb52b719601f71  sdk/patches/rtsmart-libs/0005-feat-lvgl-enable-EdgeOS-fonts-and-JPEG-decoder.patch
-2fc9d78ea12b815901663d5c9e9a6c442634c0c552881088df3b9943047f133d  sdk/patches/rtsmart-libs/series
+0c418880dc19fc181af89f10c210e2785f543a360d1f089b0811fbe6ec4041c0  sdk/patches/rtsmart-libs/0006-fix-build-prefer-RT-Smart-HAL-libraries-on-name-coll.patch
+7e4629a57d1f120e5b0a28d9187b24a7e2bf1e0d64d9cfe28a992f793a0be917  sdk/patches/rtsmart-libs/series
 2b1d2261b4c315f9fb6f8cb4580b4585df329bef1c3429257be07b8539362e92  sdk/patches/rtsmart/0001-feat-ota-add-fail-safe-A-B-update-sessions.patch
 285cd63fd7e5f6c80fbcf62d8d6b3ecef6367af63d2d1c7581568b2ba1187963  sdk/patches/rtsmart/0002-feat-mount-select-EdgeOS-application-slot-from-ATAG.patch
 36167b9a9b5a6811e840b2a11171ec21b13136c6eaa4eb392704a5425a81bea6  sdk/patches/rtsmart/0003-fix-touch-ignore-empty-event-queue-reads.patch

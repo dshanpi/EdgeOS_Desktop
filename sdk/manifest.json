@@ -18,8 +18,8 @@
       "name": "canmv-k230/k230_rtsmart_lib",
       "path": "src/rtsmart/libs",
       "base_revision": "4964b24f020825216a3095ba7ba998ae6e76bce7",
-      "patched_revision": "4ff5f08e522f6e9d23b9bd89be02ce4fdbc2fe10",
-      "patched_tree": "a6d9fe7bd1b70a67570487aa905559680a92233e",
+      "patched_revision": "4d0e5af7739d08a812de83da68642aeb6b29fcd7",
+      "patched_tree": "3c2e88bc48e2130e41dfef25e41c8dc34bcc86e9",
       "series": "sdk/patches/rtsmart-libs/series"
     },
     {

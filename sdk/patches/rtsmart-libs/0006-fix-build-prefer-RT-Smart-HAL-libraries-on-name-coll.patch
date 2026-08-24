@@ -1,0 +1,31 @@
+From 4d0e5af7739d08a812de83da68642aeb6b29fcd7 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 01:05:05 -0400
+Subject: [PATCH 6/6] fix(build): prefer RT-Smart HAL libraries on name
+ collisions
+
+---
+ mk/librtsmart_hal.mk | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/mk/librtsmart_hal.mk b/mk/librtsmart_hal.mk
+index 889b164..ccadd68 100644
+--- a/mk/librtsmart_hal.mk
++++ b/mk/librtsmart_hal.mk
+@@ -1,6 +1,11 @@
+ lib_rtsmart_hal_inc_dir := $(SDK_RTSMART_BUILD_DIR)/libs/rtsmart_hal/include
+ lib_rtsmart_hal_lib_dir := $(SDK_RTSMART_BUILD_DIR)/libs/rtsmart_hal/lib
++lib_rtsmart_hal_libs := $(foreach dir,$(lib_rtsmart_hal_lib_dir),$(wildcard $(dir)/lib*.a))
++lib_rtsmart_hal_lib_names := $(subst lib,,$(basename $(notdir $(lib_rtsmart_hal_libs))))
+ 
+ LIB_CFLAGS += $(addprefix -I, $(lib_rtsmart_hal_inc_dir))
+-LIB_LDFLAGS += $(addprefix -L, $(lib_rtsmart_hal_lib_dir)) 
+-LIB_LDFLAGS += -Wl,--start-group $(addprefix -l,$(subst lib, ,$(basename $(notdir $(foreach dir, $(lib_rtsmart_hal_lib_dir), $(wildcard $(dir)/*)))))) -Wl,--end-group
++# Prefer the HAL archive directory for duplicate library names.  MPP also
++# ships libvg_lite.a, but the HAL build contains the newer cache-management
++# API used by the userspace LVGL port.
++LIB_LDFLAGS := $(addprefix -L, $(lib_rtsmart_hal_lib_dir)) $(LIB_LDFLAGS)
++LIB_LDFLAGS += -Wl,--start-group $(addprefix -l,$(lib_rtsmart_hal_lib_names)) -Wl,--end-group
+-- 
+2.25.1
+
