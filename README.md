@@ -149,7 +149,7 @@ make menuconfig
 
 仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。
 
-> **SDK 兼容性：** 集成脚本只更新 `apps.mk` 构建注册，不会安装 SDK API 补丁。本项目还使用 DshanPI EdgeOS 配套 SDK 中的触摸点击过滤、A/B OTA 状态、播放器 seek、媒体镜像和系统版本接口；纯上游 CanMV K230 SDK 不包含全部这些扩展，本仓库目前也未包含这组 SDK 补丁。请使用与本项目匹配的 SDK 分支或补丁集，否则仍可能出现缺少 `lv_k230_touch_accept_click()`、`k230_ota_get_status()`、`kd_player_seek()` 等接口的编译错误。
+> **SDK 兼容性：** 集成脚本只更新 `apps.mk` 构建注册，不会安装 SDK API 补丁。匹配的 DshanPI EdgeOS SDK 至少需要安装播放器的 `kplayer.h` 和 `libmp4_player.a`（包含 `kd_player_seek()`），并提供触摸点击过滤、A/B OTA 状态、媒体镜像与系统版本接口。纯上游 CanMV K230 SDK 不包含全部这些扩展，本仓库目前也未包含这组 SDK 补丁。在未打补丁的 SDK 上，EdgeOS 应用编译通常会先报 `fatal error: kplayer.h: No such file or directory`，后续还可能报缺少 `lv_k230_touch_accept_click()`、`k230_ota_get_status()` 等接口。
 
 子应用构建脚本默认从 `$HOME/.kendryte/k230_toolchains/` 查找工具链。如工具链安装在其他位置，请将其 `bin` 目录通过 `K230_TOOLCHAIN_BIN` 指定：
 
@@ -163,8 +163,10 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 
 ```bash
 cd /path/to/canmv_k230
-time make log
+bash -o pipefail -c 'time make 2>&1 | tee log.txt'
 ```
+
+部分 SDK 的 `make log` 在内部使用 `make | tee` 但没有启用 `pipefail`，因此内层编译失败时命令仍可能返回 0。上面的命令既保留日志，也会正确传递失败状态。如果整包构建在进入 EdgeOS 之前失败，可以运行 `make app` 单独诊断应用链路；日志出现 `[BUILD] applications EdgeOS_Desktop` 才表示已进入本仓库的构建。
 
 构建成功后，日志末尾应出现：
 

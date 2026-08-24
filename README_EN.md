@@ -149,7 +149,7 @@ Enable `DshanPI EdgeOS Desktop` under `Applications Configuration`. The SDK disc
 
 The repository must be a direct child of `src/applications/`, but its directory name may be changed. The installed launcher remains `/sdcard/app/dshanpi_aimodel` regardless of the source directory name, preserving the OTA and sub-application return paths.
 
-> **SDK compatibility:** The integration script only updates `apps.mk` build registration; it does not install SDK API patches. This project also uses touch-click filtering, A/B OTA status, player seek, media mirroring, and system-version interfaces from the DshanPI EdgeOS SDK patch set. The stock upstream CanMV K230 SDK does not provide all of these extensions, and this repository does not currently include that SDK patch set. Use the matching SDK branch or patches, or compilation may still fail on missing interfaces such as `lv_k230_touch_accept_click()`, `k230_ota_get_status()`, and `kd_player_seek()`.
+> **SDK compatibility:** The integration script only updates `apps.mk` build registration; it does not install SDK API patches. A matching DshanPI EdgeOS SDK must at least install the player's `kplayer.h` and `libmp4_player.a` (including `kd_player_seek()`), and provide the touch-click filtering, A/B OTA status, media-mirroring, and system-version interfaces. The stock upstream CanMV K230 SDK does not provide all of these extensions, and this repository does not currently include that SDK patch set. On an unpatched SDK, the EdgeOS application build will commonly stop first at `fatal error: kplayer.h: No such file or directory`, followed by possible missing-interface errors such as `lv_k230_touch_accept_click()` and `k230_ota_get_status()`.
 
 Sub-application build scripts look for the toolchain under `$HOME/.kendryte/k230_toolchains/` by default. If the toolchain is installed elsewhere, point `K230_TOOLCHAIN_BIN` at its `bin` directory:
 
@@ -163,8 +163,10 @@ After completing the defconfig and menuconfig steps above and enabling EdgeOS De
 
 ```bash
 cd /path/to/canmv_k230
-time make log
+bash -o pipefail -c 'time make 2>&1 | tee log.txt'
 ```
+
+Some SDK versions implement `make log` internally as `make | tee` without enabling `pipefail`, so the command can return zero even when the inner build fails. The command above both records the log and propagates the failure status correctly. If the firmware build fails before reaching EdgeOS, run `make app` to diagnose the application path separately; `[BUILD] applications EdgeOS_Desktop` in the log confirms that the build has entered this repository.
 
 A successful build ends with:
 
