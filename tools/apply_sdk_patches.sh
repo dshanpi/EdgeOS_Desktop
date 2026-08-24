@@ -258,10 +258,14 @@ for project in lock_root.findall("project"):
             raise SystemExit(
                 f"locked project mismatch at {path!r}: expected {revision}, found {head}"
             )
-        if (git(repo, "diff", "--quiet", "--ignore-submodules", "--",
-                check=False).returncode != 0 or
-            git(repo, "diff", "--cached", "--quiet", "--ignore-submodules",
-                "--", check=False).returncode != 0):
+        # Target projects receive a stricter, context-aware cleanliness check
+        # below.  It is the only place where the exact apps.mk registration is
+        # accepted for an already-patched SDK root.
+        if (target is None and
+            (git(repo, "diff", "--quiet", "--ignore-submodules", "--",
+                 check=False).returncode != 0 or
+             git(repo, "diff", "--cached", "--quiet", "--ignore-submodules",
+                 "--", check=False).returncode != 0)):
             raise SystemExit(f"locked project has tracked changes: {path!r}")
 
 missing_targets = sorted(set(targets) - seen_paths)
