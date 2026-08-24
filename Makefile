@@ -2,7 +2,10 @@
 include ../mkenv.mk
 include $(SDK_RTSMART_SRC_DIR)/libs/mk/toolchain_riscv64_musl.mk
 
-DIR := $(shell basename `pwd`)
+# Keep the installed launcher name stable even when the repository is cloned
+# with its default EdgeOS_Desktop directory name.  Runtime upgrade and app
+# return paths use /sdcard/app/dshanpi_aimodel.
+DIR := dshanpi_aimodel
 BUILD := $(SDK_APPS_BUILD_DIR)/$(DIR)
 BIN := $(SDK_APPS_IMAGE_DIR)/$(DIR)
 UI_FONT_SRC := $(CURDIR)/font/DroidSansFallbackFull.ttf
@@ -105,7 +108,7 @@ CFLAGS := -fopenmp -march=rv64imafdcv -mabi=lp64d -mcmodel=medany -Os
 CFLAGS += -I$(SDK_RTSMART_SRC_DIR)/libs/rtsmart_hal/components/k230_ota
 CFLAGS += -Iapps -Imiddleware -Isystem $(LIB_CFLAGS)
 CFLAGS += -Iuart
-CFLAGS += -I$(CURDIR)/../../../design/VAXP/vaxp-1.0-headers/vaxp/include
+CFLAGS += -I$(CURDIR)/third_party/vaxp/include
 CFLAGS += -I$(SDK_SRC_ROOT_DIR)/include
 CFLAGS += -I$(SDK_RTSMART_SRC_DIR)/rtsmart/kernel/bsp/maix3
 CFLAGS += -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls_port_config.h\"

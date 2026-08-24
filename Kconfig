@@ -1,6 +1,8 @@
 config APP_ENABLE_LVGL_LAUNCHER
-    bool "Enable DongshanPI AI model application"
+    bool "Enable DshanPI EdgeOS Desktop"
     default n
-    depends on RTSMART_3RD_PARTY_ENABLE_LVGL
+    select RTSMART_3RD_PARTY_ENABLE_LVGL
+    select RTSMART_3RD_PARTY_ENABLE_CJSON
     help
-        Build the DongshanPI 640x480 ST7701 AI model application.
+        Build DshanPI EdgeOS Desktop and its AI applications for the
+        640x480 ST7701 display.

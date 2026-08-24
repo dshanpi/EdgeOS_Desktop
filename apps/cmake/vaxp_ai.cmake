@@ -21,7 +21,7 @@ set(VAXP_AI_SOURCES
 include_directories(
     ${DSHANPI_AI_ROOT}/uart
     ${DSHANPI_AI_ROOT}/system
-    ${DSHANPI_REPO_ROOT}/design/VAXP/vaxp-1.0-headers/vaxp/include
+    ${DSHANPI_AI_ROOT}/third_party/vaxp/include
     ${DSHANPI_RTSMART_HAL}/include
     ${DSHANPI_REPO_ROOT}/src/rtsmart/libs/rtsmart_hal/drivers/uart
     ${DSHANPI_REPO_ROOT}/src/rtsmart/libs/rtsmart_hal/drivers/fpioa)

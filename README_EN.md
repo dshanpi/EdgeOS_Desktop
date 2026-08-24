@@ -61,7 +61,7 @@ To receive and parse VAXP protocol data exported by EdgeOS Desktop over UART, se
 | AI runtime | nncase / KPU, depending on the application |
 | Toolchain | RISC-V musl cross toolchain supplied with the CanMV K230 SDK |
 
-This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase, OpenCV, VAXP headers, and image-generation tools supplied by the CanMV K230 SDK. It cannot be built or run as a standalone Linux desktop application.
+This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase, OpenCV, and image-generation tools supplied by the CanMV K230 SDK. The VAXP protocol headers are bundled in `third_party/vaxp/include/`; the build no longer relies on local files outside this repository. It cannot be built or run as a standalone Linux desktop application.
 
 ## Source layout
 
@@ -85,6 +85,8 @@ This repository depends on LVGL, MPP, the RT-Smart HAL, Mbed TLS, cJSON, nncase,
 │   ├── power_control.*        Restart, shutdown, and flashing mode
 │   └── ota_*                  HTTPS, manifest verification, and A/B OTA
 ├── uart/                      UART Lab, VAXP, and AI data streaming
+├── third_party/vaxp/          Bundled VAXP 1.0 protocol headers
+├── tools/                     CanMV SDK integration script
 ├── skill/                     DshanPI EdgeOS UI design Skill
 ├── Kconfig
 └── Makefile
@@ -109,8 +111,8 @@ The repository contains large runtime assets such as models, fonts, images, and 
 ```bash
 sudo apt install git-lfs
 git lfs install
-git clone https://github.com/dshanpi/DshanPI_EdgeOS_Desktop.git
-cd DshanPI_EdgeOS_Desktop
+git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+cd EdgeOS_Desktop
 git lfs pull
 ```
 
@@ -122,7 +124,7 @@ Place the repository directly under the SDK application directory:
 
 ```text
 canmv_k230/
-└── src/applications/dshanpi_aimodel/
+└── src/applications/EdgeOS_Desktop/
     ├── apps/
     ├── middleware/
     ├── system/
@@ -134,12 +136,20 @@ For example:
 
 ```bash
 cd /path/to/canmv_k230/src/applications
-git clone https://github.com/dshanpi/DshanPI_EdgeOS_Desktop.git dshanpi_aimodel
-cd dshanpi_aimodel
+git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+cd EdgeOS_Desktop
 git lfs pull
+./tools/integrate_canmv_sdk.sh
+cd ../../..
+make k230_canmv_dongshanpi_defconfig
+make menuconfig
 ```
 
-The application `Makefile` uses relative SDK paths, so keep the repository at this level under `src/applications/`.
+Enable `DshanPI EdgeOS Desktop` under `Applications Configuration`. The SDK discovers the menu entry automatically from this repository's Kconfig; the integration script idempotently updates the parent `apps.mk` according to the checkout directory name and maps the option to the actual build directory. Menu discovery and build registration are separate, so run the script again in a new SDK checkout or after resetting `apps.mk`.
+
+The repository must be a direct child of `src/applications/`, but its directory name may be changed. The installed launcher remains `/sdcard/app/dshanpi_aimodel` regardless of the source directory name, preserving the OTA and sub-application return paths.
+
+> **SDK compatibility:** The integration script only updates `apps.mk` build registration; it does not install SDK API patches. This project also uses touch-click filtering, A/B OTA status, player seek, media mirroring, and system-version interfaces from the DshanPI EdgeOS SDK patch set. The stock upstream CanMV K230 SDK does not provide all of these extensions, and this repository does not currently include that SDK patch set. Use the matching SDK branch or patches, or compilation may still fail on missing interfaces such as `lv_k230_touch_accept_click()`, `k230_ota_get_status()`, and `kd_player_seek()`.
 
 Sub-application build scripts look for the toolchain under `$HOME/.kendryte/k230_toolchains/` by default. If the toolchain is installed elsewhere, point `K230_TOOLCHAIN_BIN` at its `bin` directory:
 
@@ -149,11 +159,10 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 
 ## Building firmware
 
-Select the DshanPI CanMV-K230 configuration and build from the SDK root:
+After completing the defconfig and menuconfig steps above and enabling EdgeOS Desktop, build from the SDK root:
 
 ```bash
 cd /path/to/canmv_k230
-make k230_canmv_dongshanpi_defconfig
 time make log
 ```
 
@@ -179,10 +188,10 @@ The system version is maintained by the SDK board file `boards/k230_canmv_dongsh
 After configuring the SDK and building its base libraries, run this command from the SDK root:
 
 ```bash
-make -C src/applications/dshanpi_aimodel
+make -C src/applications/EdgeOS_Desktop
 ```
 
-This target builds the desktop and the AI sub-applications enabled by the application `Makefile`. Several sub-applications share model resources and output directories, so preserve the existing dependency order when changing parallel-build rules.
+If you used another checkout directory name, replace `EdgeOS_Desktop` in the command accordingly. This target builds the desktop and the AI sub-applications enabled by the application `Makefile`. Several sub-applications share model resources and output directories, so preserve the existing dependency order when changing parallel-build rules.
 
 ## Localization and fonts
 

@@ -61,7 +61,7 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 | AI 运行时 | nncase / KPU，依具体子应用而定 |
 | 工具链 | CanMV K230 SDK 配套的 RISC-V musl 交叉工具链 |
 
-本仓库依赖 CanMV K230 SDK 提供的 LVGL、MPP、RT-Smart HAL、Mbed TLS、cJSON、nncase、OpenCV、VAXP 头文件和固件打包工具。单独克隆本仓库不能在普通 Linux 主机上直接构建或运行桌面程序。
+本仓库依赖 CanMV K230 SDK 提供的 LVGL、MPP、RT-Smart HAL、Mbed TLS、cJSON、nncase、OpenCV 和固件打包工具。VAXP 协议头文件已随仓库放在 `third_party/vaxp/include/`，不再依赖 SDK 目录之外的本地文件。单独克隆本仓库不能在普通 Linux 主机上直接构建或运行桌面程序。
 
 ## 源码结构
 
@@ -85,6 +85,8 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 │   ├── power_control.*        重启、关机和烧录模式
 │   └── ota_*                  HTTPS、清单验签与 A/B OTA
 ├── uart/                      UART Lab、VAXP 与 AI 数据流
+├── third_party/vaxp/          随仓库发布的 VAXP 1.0 协议头文件
+├── tools/                     CanMV SDK 集成脚本
 ├── skill/                     DshanPI EdgeOS UI 设计 Skill
 ├── Kconfig
 └── Makefile
@@ -109,8 +111,8 @@ apps ─────────────→ system
 ```bash
 sudo apt install git-lfs
 git lfs install
-git clone https://github.com/dshanpi/DshanPI_EdgeOS_Desktop.git
-cd DshanPI_EdgeOS_Desktop
+git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+cd EdgeOS_Desktop
 git lfs pull
 ```
 
@@ -122,7 +124,7 @@ git lfs pull
 
 ```text
 canmv_k230/
-└── src/applications/dshanpi_aimodel/
+└── src/applications/EdgeOS_Desktop/
     ├── apps/
     ├── middleware/
     ├── system/
@@ -134,12 +136,20 @@ canmv_k230/
 
 ```bash
 cd /path/to/canmv_k230/src/applications
-git clone https://github.com/dshanpi/DshanPI_EdgeOS_Desktop.git dshanpi_aimodel
-cd dshanpi_aimodel
+git clone https://github.com/dshanpi/EdgeOS_Desktop.git
+cd EdgeOS_Desktop
 git lfs pull
+./tools/integrate_canmv_sdk.sh
+cd ../../..
+make k230_canmv_dongshanpi_defconfig
+make menuconfig
 ```
 
-该目录的 `Makefile` 使用相对路径接入 SDK，因此不要随意改变它在 `src/applications/` 下的层级。
+进入 `Applications Configuration` 后启用 `DshanPI EdgeOS Desktop`。SDK 会从本仓库的 Kconfig 自动发现菜单项；集成脚本则根据当前目录名幂等更新父目录的 `apps.mk`，将该选项映射到实际构建目录。菜单发现和参与构建是两个独立步骤，因此在新的 SDK 中或重置 `apps.mk` 后需要重新运行脚本。
+
+仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。
+
+> **SDK 兼容性：** 集成脚本只更新 `apps.mk` 构建注册，不会安装 SDK API 补丁。本项目还使用 DshanPI EdgeOS 配套 SDK 中的触摸点击过滤、A/B OTA 状态、播放器 seek、媒体镜像和系统版本接口；纯上游 CanMV K230 SDK 不包含全部这些扩展，本仓库目前也未包含这组 SDK 补丁。请使用与本项目匹配的 SDK 分支或补丁集，否则仍可能出现缺少 `lv_k230_touch_accept_click()`、`k230_ota_get_status()`、`kd_player_seek()` 等接口的编译错误。
 
 子应用构建脚本默认从 `$HOME/.kendryte/k230_toolchains/` 查找工具链。如工具链安装在其他位置，请将其 `bin` 目录通过 `K230_TOOLCHAIN_BIN` 指定：
 
@@ -149,11 +159,10 @@ export K230_TOOLCHAIN_BIN=/opt/k230-toolchain/bin
 
 ## 构建固件
 
-在 SDK 根目录选择 DshanPI CanMV-K230 配置并构建：
+完成上一节的 defconfig 和 menuconfig 配置并启用 EdgeOS Desktop 后，在 SDK 根目录构建：
 
 ```bash
 cd /path/to/canmv_k230
-make k230_canmv_dongshanpi_defconfig
 time make log
 ```
 
@@ -179,10 +188,10 @@ output/k230_canmv_dongshanpi_defconfig/
 完成 SDK 配置和基础库构建后，可从 SDK 根目录执行：
 
 ```bash
-make -C src/applications/dshanpi_aimodel
+make -C src/applications/EdgeOS_Desktop
 ```
 
-该目标会构建桌面以及 Makefile 中启用的 AI 子应用。多个子应用共享模型资源和输出目录，修改并行构建规则时要保留现有依赖顺序。
+如果克隆时使用了其他目录名，请相应替换命令中的 `EdgeOS_Desktop`。该目标会构建桌面以及 Makefile 中启用的 AI 子应用。多个子应用共享模型资源和输出目录，修改并行构建规则时要保留现有依赖顺序。
 
 ## 多语言与字体
 

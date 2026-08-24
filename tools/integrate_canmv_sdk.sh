@@ -1,0 +1,67 @@
+#!/bin/sh
+
+set -eu
+
+fail()
+{
+    printf 'EdgeOS SDK integration: %s\n' "$*" >&2
+    exit 1
+}
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+APP_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+APPS_DIR=$(dirname -- "$APP_DIR")
+SDK_ROOT=$(CDPATH= cd -- "$APPS_DIR/../.." && pwd)
+APP_NAME=$(basename -- "$APP_DIR")
+APPS_MK="$APPS_DIR/apps.mk"
+
+[ "$(basename -- "$APPS_DIR")" = "applications" ] ||
+    fail "place this repository directly under canmv_k230/src/applications"
+[ -f "$APP_DIR/Kconfig" ] || fail "missing $APP_DIR/Kconfig"
+[ -f "$SDK_ROOT/Makefile" ] || fail "cannot find the CanMV SDK root"
+[ -f "$APPS_MK" ] || fail "cannot find $APPS_MK"
+
+case "$APP_NAME" in
+    ''|*[!A-Za-z0-9_.-]*)
+        fail "unsupported application directory name: $APP_NAME"
+        ;;
+esac
+
+MAPPING='subdirs-$(CONFIG_APP_ENABLE_LVGL_LAUNCHER) += '"$APP_NAME"
+TMP_FILE=$(mktemp "$APPS_MK.edgeos.XXXXXX") ||
+    fail "cannot create a temporary file next to $APPS_MK"
+
+cleanup()
+{
+    rm -f -- "$TMP_FILE"
+}
+trap cleanup EXIT HUP INT TERM
+
+awk -v mapping="$MAPPING" '
+    BEGIN { registered = 0 }
+    /^[[:space:]]*subdirs-\$\(CONFIG_APP_ENABLE_LVGL_LAUNCHER\)[[:space:]]*\+=[[:space:]]*/ {
+        if (!registered) {
+            print mapping
+            registered = 1
+        }
+        next
+    }
+    { print }
+    END {
+        if (!registered)
+            print mapping
+    }
+' "$APPS_MK" > "$TMP_FILE"
+
+chmod --reference="$APPS_MK" "$TMP_FILE"
+if cmp -s "$APPS_MK" "$TMP_FILE"; then
+    printf 'EdgeOS Desktop is already registered in %s\n' "$APPS_MK"
+else
+    mv -- "$TMP_FILE" "$APPS_MK"
+    printf 'Registered EdgeOS Desktop (%s) in %s\n' "$APP_NAME" "$APPS_MK"
+fi
+
+cleanup
+trap - EXIT HUP INT TERM
+printf 'Next: cd %s && make <board>_defconfig && make menuconfig\n' "$SDK_ROOT"
+printf 'Then enable "DshanPI EdgeOS Desktop" under Applications Configuration.\n'
