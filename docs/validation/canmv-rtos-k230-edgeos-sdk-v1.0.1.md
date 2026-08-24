@@ -76,6 +76,11 @@ DshanPI_EdgeOS_Desktop_v0.7.6.img
 
 Measured results:
 
+- Post-build `tools/check_sdk_compat.sh` passed in both workspaces with the
+  cross `nm` selected. Each run verified all 24 locked projects, reproduced
+  all six patch series, accepted only the expected `apps.mk` registration,
+  checked `kd_player_seek`, ran the SDK regression suite, and invoked the full
+  firmware-image validator.
 - Python genimage regression suite: 5/5 passed in both SDK trees. It covers
   final TOC synchronization, automatic offsets, separate KDIMG TOC output,
   partition-order protection, and non-zero process failure propagation.
