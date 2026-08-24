@@ -1,43 +1,35 @@
 #include "power_control.h"
+#include "drv_pmu.h"
 
-#include <fcntl.h>
 #include <stdio.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
-#define DSHANPI_PMU_DEVICE "/dev/pmu_pwrkey"
-#define DSHANPI_PMU_IOCTL_POWER_OFF _IO('P', 0x06)
-#define DSHANPI_PMU_IOCTL_REBOOT    _IO('P', 0x07)
-#define DSHANPI_PMU_IOCTL_REBOOT_TO_UPGRADE _IO('P', 0x08)
-
-static int power_command(unsigned long command)
+static int power_command(int (*command)(drv_pmu_inst_t *), const char *name)
 {
-    int fd = open(DSHANPI_PMU_DEVICE, O_RDWR);
+    drv_pmu_inst_t *pmu = NULL;
     int result;
 
-    if (fd < 0) {
-        perror("[power] open " DSHANPI_PMU_DEVICE);
+    if (command == NULL || drv_pmu_inst_create(&pmu) != 0) {
+        fprintf(stderr, "[power] cannot open PMU for %s\n", name);
         return -1;
     }
-    result = ioctl(fd, command);
-    if (result != 0) {
-        perror("[power] ioctl");
-    }
-    close(fd);
+    result = command(pmu);
+    if (result != 0)
+        fprintf(stderr, "[power] PMU command %s failed\n", name);
+    drv_pmu_inst_destroy(&pmu);
     return result;
 }
 
 int dshanpi_power_off(void)
 {
-    return power_command(DSHANPI_PMU_IOCTL_POWER_OFF);
+    return power_command(drv_pmu_shutdown_now, "power-off");
 }
 
 int dshanpi_power_reboot(void)
 {
-    return power_command(DSHANPI_PMU_IOCTL_REBOOT);
+    return power_command(drv_pmu_reboot, "reboot");
 }
 
 int dshanpi_power_reboot_to_upgrade(void)
 {
-    return power_command(DSHANPI_PMU_IOCTL_REBOOT_TO_UPGRADE);
+    return power_command(drv_pmu_reboot_to_upgrade, "reboot-to-upgrade");
 }
