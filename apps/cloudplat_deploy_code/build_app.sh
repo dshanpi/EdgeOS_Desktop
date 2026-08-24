@@ -19,7 +19,7 @@ export NNCASE_SRC_DIR="${SDK_RTSMART_SRC_DIR}/libs/nncase/"
 export OPENCV_SRC_DIR="${SDK_RTSMART_SRC_DIR}/libs/opencv/"
 
 # Set cross-compile toolchain path
-export PATH=$PATH:~/.kendryte/k230_toolchains/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin
+export PATH="${PATH}:${K230_TOOLCHAIN_BIN:-${HOME}/.kendryte/k230_toolchains/riscv64-linux-musleabi_for_x86_64-pc-linux-gnu/bin}"
 
 # =======================
 # Output directories
