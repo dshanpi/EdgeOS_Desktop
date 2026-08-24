@@ -60,7 +60,7 @@ DshanPI EdgeOS Desktop 是面向 DshanPI CanMV-K230 V3 的嵌入式桌面与 AI 
 | UI | LVGL |
 | AI 运行时 | nncase / KPU，依具体子应用而定 |
 | 工具链 | CanMV K230 SDK 配套的 RISC-V musl 交叉工具链 |
-| 存储 | 至少 8 GB microSD；OTA 前 `/data` 可用空间须大于 OTA KDIMG |
+| 存储 | 推荐使用板载至少 8 GB eMMC；OTA 前 `/data` 可用空间须大于 OTA KDIMG |
 
 本仓库依赖 CanMV K230 SDK 提供的 LVGL、MPP、RT-Smart HAL、Mbed TLS、cJSON、nncase、OpenCV 和固件打包工具。VAXP 协议头文件已随仓库放在 `third_party/vaxp/include/`，不再依赖 SDK 目录之外的本地文件。单独克隆本仓库不能在普通 Linux 主机上直接构建或运行桌面程序。
 
@@ -125,7 +125,10 @@ git lfs fsck
 
 ## 在 rtos_k230 / CanMV K230 SDK 中构建
 
-面向普通用户的完整流程见 [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md)，英文版见 [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md)。指南包含主机依赖、锁定 SDK 检出、工具链、Git LFS、方案 A、配置、全量构建、产物检查和故障排查。本项目已在实际名为 `rtos_k230` 的工作区完成端到端验证；记录见 [`docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md`](docs/validation/rtos-k230-edgeos-sdk-v1.0.0.md)。
+面向普通用户的完整流程见 [`docs/BUILD_RTOS_K230.md`](docs/BUILD_RTOS_K230.md)，英文版见 [`docs/BUILD_RTOS_K230_EN.md`](docs/BUILD_RTOS_K230_EN.md)。指南包含主机依赖、锁定 SDK 检出、工具链、Git LFS、方案 A、配置、全量构建、产物检查和故障排查。构建与板端验证状态见 [`docs/validation/README.md`](docs/validation/README.md)，使用 LYNX 写入板载 eMMC 的步骤见 [`docs/FLASH_LYNX.md`](docs/FLASH_LYNX.md)。
+
+> [!CAUTION]
+> `edgeos-sdk-v1.0.0` 虽然可以完成编译和镜像打包，但 Python genimage 在最终分区布局解析前缓存了 TOC，导致 `spl`、`uboot` 的长度错误地保留为 0；严格启动校验因此在开发板上报 `K230 boot: invalid TOC entry 1`，随后出现回退路径的 `no mkimage signature but raw image not supported`。该版本已撤回，不得继续烧录或分发其 `v0.7.5` 固件；请使用 `edgeos-sdk-v1.0.1` 重新构建产品版本 `v0.7.6`。
 
 `rtos_k230` 和 `canmv_k230` 只是本地目录名。只要 SDK 来自本项目的 24 项锁定清单，构建目标仍然是 `k230_canmv_dongshanpi_edgeos_defconfig`。
 
@@ -147,10 +150,11 @@ rtos_k230/                      # 也可以命名为 canmv_k230
 (
 set -e
 cd /path/to/rtos_k230/src/applications
-git clone --branch edgeos-sdk-v1.0.0 \
+git clone --branch edgeos-sdk-v1.0.1 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
-test "$(git rev-parse HEAD)" = "18df75d569bd5ecdfd8ccec8d37bf343e530533d"
+test "$(git rev-parse HEAD)" = \
+  "$(git rev-list -n1 edgeos-sdk-v1.0.1)"
 git lfs pull
 git lfs fsck
 ./tools/apply_sdk_patches.sh --check
@@ -166,9 +170,9 @@ bash -o pipefail -c 'time make 2>&1 | tee edgeos-build.log'
 
 专用配置 `k230_canmv_dongshanpi_edgeos_defconfig` 会自动启用 `DshanPI EdgeOS Desktop`，无需再手工修改配置。需要检查或调整功能时可另外执行 `make menuconfig`；此时应用会显示在 `Applications Configuration` 下。SDK 从本仓库的 Kconfig 发现菜单项，集成脚本则根据当前目录名幂等更新父目录的 `apps.mk`，将该选项映射到实际构建目录。菜单发现和参与构建是两个独立步骤，因此在新的 SDK 中或重置 `apps.mk` 后需要重新运行集成脚本。
 
-仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。
+仓库必须是 `src/applications/` 的直属子目录，但目录名可以自定义。无论源码目录叫什么，最终桌面启动文件都固定安装为 `/sdcard/app/dshanpi_aimodel`，以兼容 OTA 和子应用返回桌面的路径。这里的 `/sdcard` 是 RT-Smart 的逻辑挂载路径，SDK 中的 `images/sdcard/` 同样只是镜像构建目录名；两者都不表示固件必须写入物理 microSD/TF 卡。
 
-> **SDK 兼容性：** 本仓库的 [`sdk/`](sdk/) 提供了可复现的方案 A 补丁集，包括播放器、触摸点击过滤、A/B OTA、媒体镜像、系统版本和专用产品配置等 SDK 扩展。补丁严格锁定 [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml) 记录的 24 个官方上游版本，不用于任意版本的 SDK：`--check` 会在不改动源码的情况下检查完整锁定版本、工作区、补丁完整性和确定性重放结果，全部预检通过后才可用 `--apply` 一次性应用这组相互依赖的补丁。不要只挑选其中某个补丁，也不要在版本不匹配时强制套用。创建全新 SDK 时不要从浮动 CanMV 分支直接同步；请使用 [`sdk/README.md`](sdk/README.md) 中以 `edgeos-sdk-v1.0.0` 标签作为 repo manifest 源的锁定流程。
+> **SDK 兼容性：** 本仓库的 [`sdk/`](sdk/) 提供了可复现的方案 A 补丁集，包括播放器、触摸点击过滤、A/B OTA、媒体镜像、系统版本和专用产品配置等 SDK 扩展。补丁严格锁定 [`sdk/manifests/upstream-lock.xml`](sdk/manifests/upstream-lock.xml) 记录的 24 个官方上游版本，不用于任意版本的 SDK：`--check` 会在不改动源码的情况下检查完整锁定版本、工作区、补丁完整性和确定性重放结果，全部预检通过后才可用 `--apply` 一次性应用这组相互依赖的补丁。不要只挑选其中某个补丁，也不要在版本不匹配时强制套用。创建全新 SDK 时不要从浮动 CanMV 分支直接同步；请使用 [`sdk/README.md`](sdk/README.md) 中以 `edgeos-sdk-v1.0.1` 标签作为 repo manifest 源的锁定流程。
 
 EdgeOS Desktop 不依赖 WebRTC，专用 defconfig 已将其禁用，以免引入与本产品无关的依赖；OTA 使用的 Mbed TLS 等功能仍会正常启用。
 
@@ -200,12 +204,18 @@ Build K230 done, board k230_canmv_dongshanpi, config k230_canmv_dongshanpi_edgeo
 
 ```text
 output/k230_canmv_dongshanpi_edgeos_defconfig/
-├── DshanPI_EdgeOS_Desktop_v0.7.5.img
-├── DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg
+├── DshanPI_EdgeOS_Desktop_v0.7.6.img
+├── DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
 └── ...对应的 .gz 与摘要文件
 ```
 
-当前产品版本为 `v0.7.5`，由 SDK 板级文件 `boards/k230_canmv_dongshanpi/system-version.txt` 统一管理，不应在 UI 或发布脚本中重复维护。
+当前产品版本为 `v0.7.6`，由 SDK 板级文件 `boards/k230_canmv_dongshanpi/system-version.txt` 统一管理，不应在 UI 或发布脚本中重复维护。
+
+### 使用 LYNX 写入 eMMC
+
+开发板首次安装、恢复或完整重刷时，应在 LYNX 中选择 K230、`EMMC`（K230 SDIO0），使用解压后的完整 `DshanPI_EdgeOS_Desktop_v0.7.6.img`，并从地址/偏移 `0x0` 写入整个镜像。完整镜像已经包含启动链、TOC 和固定布局，不能改为从 `0xe0000`、`0x100000` 等内部偏移开始写入。
+
+`DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg` 仅供已经正常运行的 EdgeOS A/B OTA 客户端写入非活动槽，不是出厂/恢复镜像，**禁止在 LYNX 中烧录**。`.img.gz` 也不能直接写入，必须先解压得到 `.img`。完整操作、串口验收和故障判断见 [`docs/FLASH_LYNX.md`](docs/FLASH_LYNX.md)。
 
 全量构建后应再次运行 `tools/check_sdk_compat.sh` 并显式提供交叉 `nm`，以检查生成的播放器静态库 ABI；完整命令和本次产物大小、SHA-256、分区表见 `rtos_k230` 构建指南和验证记录。
 
@@ -251,7 +261,7 @@ make -C src/applications/EdgeOS_Desktop
 
 只读 OTA 公钥和根证书位于 `system/ota_trust_store.c`。生产私钥不得放入本仓库、固件镜像或下载服务器，应由离线发布环境或受保护的 CI Secret/HSM 保存。
 
-OTA 发布顺序应为：先上传 KDIMG，再上传 `latest.json.sig`，最后原子替换 `latest.json`。设备端使用未压缩 `.kdimg`；`.kdimg.gz` 仅适合发布系统外部传输，不能直接作为设备下载目标。
+OTA 发布顺序应为：先上传 KDIMG，再上传 `latest.json.sig`，最后原子替换 `latest.json`。设备端使用未压缩 `.kdimg`；`.kdimg.gz` 仅适合发布系统外部传输，不能直接作为设备下载目标。`*_ota.kdimg` 只属于运行中的 A/B OTA 流程，不能交给 LYNX 作为完整启动镜像烧录。
 
 ## UI 开发约定
 

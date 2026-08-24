@@ -82,6 +82,7 @@ checksum_file = root / "sdk/SHA256SUMS"
 sdk_items = list((root / "sdk").rglob("*"))
 protected_tools = [
     root / "tools/apply_sdk_patches.sh",
+    root / "tools/check_firmware_image.py",
     root / "tools/check_sdk_compat.sh",
     root / "tools/integrate_canmv_sdk.sh",
 ]
@@ -109,6 +110,7 @@ expected = {
 }
 expected.update({
     "tools/apply_sdk_patches.sh",
+    "tools/check_firmware_image.py",
     "tools/check_sdk_compat.sh",
     "tools/integrate_canmv_sdk.sh",
 })

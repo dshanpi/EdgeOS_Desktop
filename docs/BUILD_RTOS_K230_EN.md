@@ -10,14 +10,27 @@ This procedure pins the following compatibility unit:
 
 | Component | Pinned version |
 | --- | --- |
-| EdgeOS Desktop | `edgeos-sdk-v1.0.0` |
-| EdgeOS commit | `18df75d569bd5ecdfd8ccec8d37bf343e530533d` |
+| EdgeOS Desktop | `edgeos-sdk-v1.0.1` |
+| EdgeOS tag commit | Resolve and verify locally with `git rev-list -n 1 edgeos-sdk-v1.0.1` |
 | Upstream manifest | `d207027db3ae457cd43629c80b8a42e3b79fd51a` |
 | SDK projects | 24 immutable revisions in `sdk/manifests/upstream-lock.xml` |
 | Target board | DshanPI CanMV-K230 V3 |
+| Product firmware | `v0.7.6` |
 
 Do not force this patch set onto an arbitrary "latest" SDK or apply only part
 of it.
+
+> [!CAUTION]
+> `edgeos-sdk-v1.0.0` completed the full compile and packaging workflow, but its
+> generated factory firmware is **not bootable**. The final K230 TOC can retain
+> unresolved zero-sized boot entries, and U-Boot SPL then stops at
+> `K230 boot: invalid TOC entry 1`. Do not flash or redistribute a v1.0.0 image.
+> Build `edgeos-sdk-v1.0.1` and product firmware `v0.7.6` or later, then run the
+> structural image check in section 7 before flashing.
+
+The validation index is [`validation/README.md`](validation/README.md). Results
+for both `canmv_k230` and `rtos_k230` are recorded in
+[`validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md`](validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).
 
 ## 1. Prepare the host
 
@@ -59,14 +72,14 @@ mkdir "$HOME/rtos_k230" &&
 cd "$HOME/rtos_k230" &&
 repo init \
   -u https://github.com/dshanpi/EdgeOS_Desktop.git \
-  -b refs/tags/edgeos-sdk-v1.0.0 \
+  -b refs/tags/edgeos-sdk-v1.0.1 \
   -m sdk/manifests/upstream-lock.xml \
   --repo-url=https://github.com/canmv-k230/git-repo.git &&
 repo sync -c -j"$(nproc)"
 ```
 
-The full `refs/tags/edgeos-sdk-v1.0.0` ref is required. A bare
-`-b edgeos-sdk-v1.0.0` is interpreted as a branch by repo and fails.
+The full `refs/tags/edgeos-sdk-v1.0.1` ref is required. A bare
+`-b edgeos-sdk-v1.0.1` is interpreted as a branch by repo and fails.
 
 Inspect the workspace and download both SDK toolchains:
 
@@ -87,12 +100,13 @@ The application must be an immediate child of `src/applications/`:
 (
 set -e
 cd "$HOME/rtos_k230/src/applications"
-git clone --branch edgeos-sdk-v1.0.0 \
+git clone --branch edgeos-sdk-v1.0.1 \
   https://github.com/dshanpi/EdgeOS_Desktop.git
 cd EdgeOS_Desktop
 
-test "$(git rev-parse HEAD)" = \
-  "18df75d569bd5ecdfd8ccec8d37bf343e530533d"
+tag_commit=$(git rev-list -n 1 edgeos-sdk-v1.0.1)
+test -n "$tag_commit"
+test "$(git rev-parse HEAD)" = "$tag_commit"
 printf 'Verified EdgeOS commit: %s\n' "$(git rev-parse HEAD)"
 git describe --tags --exact-match HEAD
 git lfs pull
@@ -159,7 +173,7 @@ Use a command that propagates a nested make failure through `tee`:
 ```bash
 cd "$HOME/rtos_k230"
 bash -o pipefail -c \
-  'time make 2>&1 | tee edgeos-v1.0.0-build.log'
+  'time make 2>&1 | tee edgeos-v1.0.1-build.log'
 ```
 
 Do not treat `make app` as final acceptance. It is useful for application
@@ -183,28 +197,65 @@ K230_TOOLCHAIN_NM="${SDK_TOOLCHAIN_DIR:-$HOME/.kendryte/k230_toolchains}/riscv64
 ```bash
 cd "$HOME/rtos_k230/output/k230_canmv_dongshanpi_edgeos_defconfig"
 
-test -s DshanPI_EdgeOS_Desktop_v0.7.5.img
-test -s DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg
+test -s DshanPI_EdgeOS_Desktop_v0.7.6.img
+test -s DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
 sha256sum \
-  DshanPI_EdgeOS_Desktop_v0.7.5.img \
-  DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg
-fdisk -l DshanPI_EdgeOS_Desktop_v0.7.5.img
+  DshanPI_EdgeOS_Desktop_v0.7.6.img \
+  DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg
+fdisk -l DshanPI_EdgeOS_Desktop_v0.7.6.img
+python3 "$HOME/rtos_k230/src/applications/EdgeOS_Desktop/tools/check_firmware_image.py" \
+  DshanPI_EdgeOS_Desktop_v0.7.6.img
 sed -n '1,120p' images/sdcard/revision.txt
 ```
 
+Do not accept the image unless `check_firmware_image.py` ends with
+`PASS: EdgeOS firmware image is structurally valid.` In particular, every K230
+TOC entry—including `spl` and `uboot`—must have a nonzero final offset and size.
+This structural gate is required even when the full compile and packaging
+commands returned zero.
+
 The factory image should contain three pre-created FAT partitions: a 20 MiB
-`bin`, a 1 GiB `app_a`, and a 1 GiB `app_b`. On the first boot from an 8 GB or
-larger microSD, RT-Smart creates the fourth `/data` partition from the remaining
-space, reboots once to rescan the table, then formats and mounts it. Do not
-remove power during this first-boot sequence.
+`bin`, a 1 GiB `app_a`, and a 1 GiB `app_b`. After this full image is written to
+the onboard eMMC, RT-Smart creates the fourth `/data` partition from the
+remaining space on first boot, reboots once to rescan the table, then formats
+and mounts it. Do not remove power during this first-boot sequence.
+
+The firmware's `/sdcard` path is a logical mount point for the selected
+`app_a`/`app_b` filesystem on the onboard eMMC. It does not indicate a removable
+microSD boot medium and does not change the LYNX target from `EMMC(SDIO0)`.
 
 The device OTA client consumes the uncompressed
-`DshanPI_EdgeOS_Desktop_v0.7.5_ota.kdimg`. Do not configure a `.kdimg.gz` file
+`DshanPI_EdgeOS_Desktop_v0.7.6_ota.kdimg`. Do not configure a `.kdimg.gz` file
 as the device download target. Before downloading an OTA, `/data` must have
-more free space than the uncompressed KDIMG. This run produced about 1.02 GiB;
-leave additional headroom in a real deployment.
+more free space than the actual uncompressed KDIMG; leave additional headroom
+in a real deployment.
 
-## 8. Non-default toolchain path
+The `_ota.kdimg` is only for the updater running on an already bootable EdgeOS
+installation. It is not a whole-disk factory image and must never be selected
+as the LYNX image.
+
+## 8. Flash the full image with LYNX
+
+Follow [`FLASH_LYNX_EN.md`](FLASH_LYNX_EN.md). The required LYNX values are:
+
+| LYNX field | Required value |
+| --- | --- |
+| Image | Uncompressed full `DshanPI_EdgeOS_Desktop_v0.7.6.img` |
+| Chip/device | `K230` |
+| Storage target | `EMMC(SDIO0)` |
+| Write mode | Complete/raw image |
+| Write offset | `0` (`0x0`) |
+
+Never use `_ota.kdimg`, `.kdimg.gz`, or `.img.gz` as the raw LYNX input. If the
+factory image was distributed as `.img.gz`, decompress it first and validate
+the resulting `.img` with `check_firmware_image.py`.
+
+An `HS200 tuning failed` line is not by itself a boot failure when it is followed
+by `MMC0: selected timing: MMC High Speed (52MHz)`: U-Boot has successfully
+fallen back to eMMC high-speed mode. Continue inspecting the subsequent TOC and
+RT-Smart boot messages.
+
+## 9. Non-default toolchain path
 
 The top-level SDK and the EdgeOS sub-applications use different variables. If
 the toolchain is not in its default location, use this complete block instead
@@ -219,7 +270,7 @@ export K230_TOOLCHAIN_BIN="$SDK_TOOLCHAIN_DIR/riscv64-linux-musleabi_for_x86_64-
 cd "$HOME/rtos_k230"
 make dl_toolchain
 make k230_canmv_dongshanpi_edgeos_defconfig
-bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.0-build.log'
+bash -o pipefail -c 'time make 2>&1 | tee edgeos-v1.0.1-build.log'
 K230_TOOLCHAIN_NM="$K230_TOOLCHAIN_BIN/riscv64-unknown-linux-musl-nm" \
   ./src/applications/EdgeOS_Desktop/tools/check_sdk_compat.sh
 )
@@ -231,7 +282,7 @@ K230_TOOLCHAIN_NM="$K230_TOOLCHAIN_BIN/riscv64-unknown-linux-musl-nm" \
 
 Keep both variables consistent for defconfig, compatibility checks, and builds.
 
-## 9. Safely handling an existing SDK
+## 10. Safely handling an existing SDK
 
 A fresh workspace is preferred. If an existing directory must be reused:
 
@@ -278,7 +329,7 @@ Do not use this to hide other project changes. `--check` remains the only gate
 for deciding whether patching is safe. Keep the printed backup file until the
 new mapping has been reviewed and the build has completed.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Cause | Resolution |
 | --- | --- | --- |
@@ -286,11 +337,13 @@ new mapping has been reviewed and the build has completed.
 | Missing `lv_k230_touch_accept_click()` or `k230_ota_get_status()` | Only the app or selected patches were copied | Apply the complete six-project unit |
 | EdgeOS is absent from `Applications Configuration` | The clone is not an immediate child of `src/applications/`, or Kconfig was not regenerated | Correct the location and rerun defconfig/menuconfig |
 | Menu entry exists but no `[BUILD] applications EdgeOS_Desktop` | `apps.mk` is not registered | Run `tools/integrate_canmv_sdk.sh` |
-| `revision mismatch` | SDK is not the v1.0.0 24-project baseline | Create a locked workspace; do not force |
+| `revision mismatch` | SDK is not the v1.0.1 24-project baseline | Create a locked workspace; do not force |
 | Models are tiny LFS pointers | LFS content was not downloaded | Run `git lfs pull && git lfs fsck` |
 | Cross compiler not found | Toolchains are missing or variables disagree | Run `make dl_toolchain` and inspect both variables |
 | DTLS-SRTP/Mbed TLS undefined references | Old Mbed TLS objects survived a config change, or the ordinary defconfig is active | Select the EdgeOS defconfig; use the targeted clean below only when necessary |
 | App FAT image reports no space | Old 512 MiB layout or incomplete resources | Verify complete Scheme A and the 1 GiB A/B layout |
+| `K230 boot: invalid TOC entry 1` | An unbootable v1.0.0, stale, or damaged full image was flashed | Build v1.0.1/v0.7.6, require the image checker to pass, then reflash the complete `.img` at offset 0 |
+| `HS200 tuning failed` followed by 52 MHz selection | U-Boot could not use HS200 and selected its supported fallback | This fallback is expected; diagnose only if later reads or boot stages fail |
 
 For a reused SDK with confirmed stale Mbed TLS objects, use only this targeted
 cleanup:
@@ -300,5 +353,5 @@ cd "$HOME/rtos_k230"
 make -C src/rtsmart/libs/3rd-party/mbedtls/mbedtls/library clean
 ```
 
-See the measured `rtos_k230` results in
-[`validation/rtos-k230-edgeos-sdk-v1.0.0.md`](validation/rtos-k230-edgeos-sdk-v1.0.0.md).
+See the validation [`index`](validation/README.md) and the current measured
+[`canmv_k230` / `rtos_k230` v1.0.1 results](validation/canmv-rtos-k230-edgeos-sdk-v1.0.1.md).

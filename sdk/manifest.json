@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "patch_set": "edgeos-sdk-v1.0.0",
+  "patch_set": "edgeos-sdk-v1.0.1",
   "generated_on": "2026-08-24",
   "upstream_manifest_revision": "d207027db3ae457cd43629c80b8a42e3b79fd51a",
   "projects": [
@@ -9,8 +9,8 @@
       "name": "kendryte/k230_rtos_sdk",
       "path": ".",
       "base_revision": "3f18247b48635f83f439bc13e564ce90d8655d18",
-      "patched_revision": "0fe500c3ce6d4b755e4f5bb4e4a32945ec344f68",
-      "patched_tree": "3f13d880ccb53a43561efda8296d86d8d24c0c26",
+      "patched_revision": "19577799736b28e2bd8464e902e637509c9854ad",
+      "patched_tree": "a6bb86513cc0a7418d4e914421b634b3d8fbafba",
       "series": "sdk/patches/sdk-root/series"
     },
     {

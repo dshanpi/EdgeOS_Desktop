@@ -85,6 +85,45 @@ require_text \
 require_text \
     configs/k230_canmv_dongshanpi_edgeos_defconfig \
     'CONFIG_RT_PARTITION_NUMBER=4' 'four-partition EdgeOS product config'
+require_text \
+    boards/k230_canmv_dongshanpi/system-version.txt \
+    '^v0\.7\.6$' 'EdgeOS v0.7.6 product version'
+require_text \
+    tools/genimage_py/image_com.py \
+    'def[[:space:]]+_sync_toc_entries[[:space:]]*\(' \
+    'post-layout TOC synchronization helper'
+require_text \
+    tools/genimage_py/image_com.py \
+    'self\._sync_toc_entries[[:space:]]*\(' \
+    'TOC synchronization before serialization'
+require_text \
+    tools/genimage_py/genimage.py \
+    'except[[:space:]]+ImageError[[:space:]]+as[[:space:]]+e:' \
+    'genimage error handler'
+
+awk '
+    /except[[:space:]]+ImageError[[:space:]]+as[[:space:]]+e:/ {
+        in_handler = 1
+        next
+    }
+    in_handler && /^[[:space:]]*raise[[:space:]]*$/ { found = 1; exit }
+    in_handler && /^[[:space:]]*(except|finally):/ { exit }
+    END { exit found ? 0 : 1 }
+' "$SDK_ROOT/tools/genimage_py/genimage.py" ||
+    fail "genimage ImageError handler does not propagate the failure"
+
+toc_test=$SDK_ROOT/tools/genimage_py/tests/test_toc_sync.py
+[[ -f $toc_test ]] || fail "missing SDK TOC regression test: $toc_test"
+if ! PYTHONPATH=$SDK_ROOT/tools \
+    python3 -m unittest discover \
+        -s "$SDK_ROOT/tools/genimage_py/tests" \
+        -p 'test_toc_sync.py' >/dev/null 2>&1; then
+    PYTHONPATH=$SDK_ROOT/tools \
+        python3 -m unittest discover \
+            -s "$SDK_ROOT/tools/genimage_py/tests" \
+            -p 'test_toc_sync.py' -v >&2 || true
+    fail "SDK TOC synchronization/error-propagation regression test failed"
+fi
 
 if [[ -f $SDK_ROOT/.config ]]; then
     require_text .config \
@@ -114,6 +153,18 @@ if [[ -f $archive ]]; then
     else
         printf 'Warning: cross nm not found; archive symbol check skipped.\n' >&2
     fi
+fi
+
+full_image=$SDK_ROOT/output/k230_canmv_dongshanpi_edgeos_defconfig/DshanPI_EdgeOS_Desktop_v0.7.6.img
+firmware_checker=$SCRIPT_DIR/check_firmware_image.py
+if [[ -f $full_image ]]; then
+    [[ -f $firmware_checker ]] ||
+        fail "missing firmware image checker: $firmware_checker"
+    python3 "$firmware_checker" "$full_image" ||
+        fail "v0.7.6 full firmware image validation failed"
+else
+    printf 'Warning: %s is absent; full firmware image validation skipped.\n' \
+        "$full_image" >&2
 fi
 
 printf 'EdgeOS SDK source/config compatibility checks passed.\n'

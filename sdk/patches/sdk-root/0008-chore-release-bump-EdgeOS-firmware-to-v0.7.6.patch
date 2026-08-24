@@ -1,0 +1,19 @@
+From 19577799736b28e2bd8464e902e637509c9854ad Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 04:23:02 -0400
+Subject: [PATCH 8/8] chore(release): bump EdgeOS firmware to v0.7.6
+
+---
+ boards/k230_canmv_dongshanpi/system-version.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/boards/k230_canmv_dongshanpi/system-version.txt b/boards/k230_canmv_dongshanpi/system-version.txt
+index aed5a7d..378c127 100644
+--- a/boards/k230_canmv_dongshanpi/system-version.txt
++++ b/boards/k230_canmv_dongshanpi/system-version.txt
+@@ -1 +1 @@
+-v0.7.5
++v0.7.6
+-- 
+2.25.1
+

@@ -1,0 +1,219 @@
+From 9ed9255e55e6549be6e5b2929793473c8f6e6e41 Mon Sep 17 00:00:00 2001
+From: Ubuntu <ubuntu@ubuntu2004.linuxvmimages.local>
+Date: Mon, 24 Aug 2026 04:14:48 -0400
+Subject: [PATCH 7/7] fix(images): refresh TOC after resolving partition layout
+
+---
+ tools/genimage_py/genimage.py            |   1 +
+ tools/genimage_py/image_com.py           |  33 +++++-
+ tools/genimage_py/image_kd.py            |   2 +-
+ tools/genimage_py/tests/test_toc_sync.py | 123 +++++++++++++++++++++++
+ 4 files changed, 157 insertions(+), 2 deletions(-)
+ create mode 100644 tools/genimage_py/tests/test_toc_sync.py
+
+diff --git a/tools/genimage_py/genimage.py b/tools/genimage_py/genimage.py
+index 2eece44..0a3db68 100644
+--- a/tools/genimage_py/genimage.py
++++ b/tools/genimage_py/genimage.py
+@@ -440,6 +440,7 @@ class GenImageTool:
+             logger.info("All images generated successfully")
+         except ImageError as e:
+             logger.error(f"error: {str(e)}")
++            raise
+         finally:
+             # Clean up temporary files
+             shutil.rmtree(self.tmppath, ignore_errors=True)
+diff --git a/tools/genimage_py/image_com.py b/tools/genimage_py/image_com.py
+index 0be932a..0c3fa70 100644
+--- a/tools/genimage_py/image_com.py
++++ b/tools/genimage_py/image_com.py
+@@ -136,12 +136,43 @@ class ComImageHandler(ImageHandler):
+             self.toc_num = self.toc.entries_num
+             logger.debug(f"TOC Partition: {partition_name} (offset 0x{toc_offset:x}, size 0x{toc_size:x})")
+ 
+-    def write_toc(self, image: Image, write_offset = None) -> None:
++    def _sync_toc_entries(self, image: Image) -> None:
++        """Refresh TOC fields after partition offsets and sizes are resolved."""
++        if not self.toc:
++            return
++
++        partitions = [
++            part for part in image.partitions
++            if not part.name.startswith('[')
++        ]
++        if len(partitions) != self.toc.entries_num:
++            raise ImageError(
++                "TOC entry count changed after partition layout resolution"
++            )
++
++        for index, (toc_entry, part) in enumerate(
++                zip(self.toc.toc_entries, partitions)):
++            if toc_entry.partition_name != part.name:
++                raise ImageError(
++                    f"TOC entry {index} changed from "
++                    f"{toc_entry.partition_name} to {part.name}"
++                )
++
++            toc_entry.partition_offset = safe_to_int(part.offset)
++            toc_entry.partition_size = safe_to_int(part.size)
++            toc_entry.load = 1 if part.load else 0
++            toc_entry.boot = safe_to_int(part.boot)
++
++    def write_toc(self, image: Image, write_offset = None,
++                  layout_image: Optional[Image] = None) -> None:
+         """write toc data"""
+         if self.toc_enable and self.toc_num and self.toc:
+             logger.debug("writing TOC")
+ 
+             toc = self.toc
++            self._sync_toc_entries(
++                layout_image if layout_image is not None else image
++            )
+             # Build toc data
+             toc_data = toc.get_toc_data()
+ 
+diff --git a/tools/genimage_py/image_kd.py b/tools/genimage_py/image_kd.py
+index a757064..04451bd 100644
+--- a/tools/genimage_py/image_kd.py
++++ b/tools/genimage_py/image_kd.py
+@@ -511,7 +511,7 @@ class KdImageHandler(ComImageHandler):
+         prepare_image(child_image, size=toc_size)
+ 
+         # Write TOC data
+-        super().write_toc(child_image, 0)
++        super().write_toc(child_image, 0, image)
+ 
+         return child_image
+ 
+diff --git a/tools/genimage_py/tests/test_toc_sync.py b/tools/genimage_py/tests/test_toc_sync.py
+new file mode 100644
+index 0000000..3a247ad
+--- /dev/null
++++ b/tools/genimage_py/tests/test_toc_sync.py
+@@ -0,0 +1,123 @@
++import struct
++import tempfile
++import unittest
++
++from genimage_py.common import Image, ImageError, Partition
++from genimage_py.genimage import GenImageTool
++from genimage_py.image_com import ComImageHandler
++from genimage_py.lib.toc import Toc, TocInsertData
++
++
++class TocSyncTest(unittest.TestCase):
++    @staticmethod
++    def make_handler(*entries):
++        handler = ComImageHandler()
++        handler.toc_enable = True
++        handler.toc = Toc(0xE0000)
++        for entry in entries:
++            handler.toc.add_toc_entry(entry)
++        handler.toc_num = handler.toc.entries_num
++        return handler
++
++    def test_resolved_layout_replaces_early_placeholder_values(self):
++        image = Image(name="factory.img", partitions=[
++            Partition("ota_meta", "factory.img", False,
++                      offset=0xF0000, size=0x800),
++            Partition("spl", "factory.img", False,
++                      offset=0x100000, size=219900,
++                      image="fn_u-boot-spl.bin"),
++            Partition("uboot", "factory.img", False,
++                      offset=0x200000, size=302287,
++                      image="fn_ug_u-boot.bin"),
++            Partition("app", "factory.img", True,
++                      offset=130 * 1024 * 1024,
++                      size=500 * 1024 * 1024, image="app.vfat"),
++            Partition("[TOC]", "factory.img", False,
++                      offset=0xE0000, size=4 * 64),
++        ])
++        handler = self.make_handler(
++            TocInsertData("ota_meta", 0xF0000, 0x800),
++            TocInsertData("spl", 0x100000, 0),
++            TocInsertData("uboot", 0x200000, 0),
++            TocInsertData("app", 0, 500 * 1024 * 1024),
++        )
++
++        handler._sync_toc_entries(image)
++
++        entries = handler.toc.toc_entries
++        self.assertEqual(entries[1].partition_size, 219900)
++        self.assertEqual(entries[2].partition_size, 302287)
++        self.assertEqual(entries[3].partition_offset, 130 * 1024 * 1024)
++
++        raw = handler.toc.get_toc_data()
++        name, offset, size, load, boot = struct.unpack_from(
++            "<32sQQBB", raw, 64
++        )
++        self.assertEqual(name.rstrip(b"\0"), b"spl")
++        self.assertEqual((offset, size, load, boot),
++                         (0x100000, 219900, 0, 0))
++
++    def test_partition_count_change_is_rejected(self):
++        image = Image(name="factory.img", partitions=[
++            Partition("spl", "factory.img", False,
++                      offset=0x100000, size=1024),
++        ])
++        handler = self.make_handler(
++            TocInsertData("spl", 0x100000, 0),
++            TocInsertData("uboot", 0x200000, 0),
++        )
++
++        with self.assertRaises(ImageError):
++            handler._sync_toc_entries(image)
++
++    def test_partition_reordering_is_rejected(self):
++        image = Image(name="factory.img", partitions=[
++            Partition("uboot", "factory.img", False,
++                      offset=0x200000, size=1024),
++        ])
++        handler = self.make_handler(
++            TocInsertData("spl", 0x100000, 0),
++        )
++
++        with self.assertRaises(ImageError):
++            handler._sync_toc_entries(image)
++
++    def test_toc_can_be_written_to_separate_partition_image(self):
++        layout = Image(name="ota.kdimg", partitions=[
++            Partition("rtt_a", "ota.kdimg", False,
++                      offset=0x500000, size=0x200000),
++        ])
++        handler = self.make_handler(
++            TocInsertData("rtt_a", 0x500000, 0),
++        )
++
++        with tempfile.NamedTemporaryFile() as output:
++            output.truncate(64)
++            toc_image = Image(name="toc", outfile=output.name, size=64)
++            handler.write_toc(toc_image, 0, layout)
++
++            output.seek(0)
++            name, offset, size, load, boot = struct.unpack(
++                "<32sQQBB", output.read(50)
++            )
++
++        self.assertEqual(name.rstrip(b"\0"), b"rtt_a")
++        self.assertEqual((offset, size, load, boot),
++                         (0x500000, 0x200000, 0, 0))
++
++    def test_image_errors_propagate_to_the_command_line(self):
++        with tempfile.TemporaryDirectory() as work_dir:
++            tool = GenImageTool(work_dir, work_dir, "unused.cfg")
++            tool.tmppath = work_dir
++            tool._creat_work_dir = lambda: None
++
++            def fail_to_parse():
++                raise ImageError("synthetic image failure")
++
++            tool.parse_config = fail_to_parse
++            with self.assertRaisesRegex(ImageError, "synthetic image failure"):
++                tool.run()
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.25.1
+

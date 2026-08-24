@@ -1,3 +1,25 @@
+> [!CAUTION]
+> **撤回勘误（2026-08-24）：** 本记录只证明 `edgeos-sdk-v1.0.0` 可以完成
+> 编译、链接和镜像打包，后续开发板测试已经证明其 `v0.7.5` 固件**不可启动**。
+> Python genimage 在最终分区布局解析前缓存了 TOC，导致 `spl`、`uboot`
+> 的长度错误地保留为 0；严格启动校验因此拒绝了该无效镜像。典型日志为
+> `K230 boot: invalid TOC entry 1`，随后出现 SPL 回退路径的
+> `no mkimage signature but raw image not supported`。v1.0.0 已撤回，请勿烧录或
+> 分发本页列出的固件与哈希；请改用 `edgeos-sdk-v1.0.1` 重新构建产品版本
+> `v0.7.6`。当前状态见 [`README.md`](README.md)。
+>
+> **WITHDRAWAL ERRATUM (2026-08-24):** This record proves only that
+> `edgeos-sdk-v1.0.0` completed compilation, linking, and image packaging.
+> Subsequent board testing proved that its `v0.7.5` firmware is **not
+> bootable**. Python genimage cached its TOC before resolving the final
+> partition layout, leaving the `spl` and `uboot` sizes incorrectly set to
+> zero; strict boot validation therefore rejected the invalid image. The characteristic failure is
+> `K230 boot: invalid TOC entry 1`, followed by the cascading SPL fallback
+> error `no mkimage signature but raw image not supported`. v1.0.0 is
+> withdrawn: do not flash or redistribute the artifacts or hashes on this
+> page. Rebuild product version `v0.7.6` from `edgeos-sdk-v1.0.1`; see the
+> [validation status index](README.md).
+
 # `rtos_k230` build validation: `edgeos-sdk-v1.0.0`
 
 ## 结论 / Result

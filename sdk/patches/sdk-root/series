@@ -4,3 +4,5 @@
 0004-fix-images-propagate-OTA-generation-failures.patch
 0005-fix-images-record-actual-patched-project-revisions.patch
 0006-fix-images-fail-closed-on-packaging-errors.patch
+0007-fix-images-refresh-final-TOC-layout.patch
+0008-chore-release-bump-EdgeOS-firmware-to-v0.7.6.patch
