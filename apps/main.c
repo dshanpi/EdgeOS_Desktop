@@ -1267,8 +1267,8 @@ static int g_system_camera_csi;
 
 static const char *const g_settings_titles[] = {
     "Wi-Fi", "Language", "Date & Time", "Startup App", "Default Camera",
-    "VAXP UART", "System Update", "About", "Power",
-    "Sleep & Screen Saver"
+    "VAXP UART", "System Update", "Sleep & Screen Saver", "Power",
+    "About"
 };
 
 /* Shared Material 3 palette for both settings levels.  Keeping these values
@@ -1276,28 +1276,28 @@ static const char *const g_settings_titles[] = {
  * plain white/grey style that they used before. */
 static const char *const g_settings_symbols[] = {
     LV_SYMBOL_WIFI, "A", LV_SYMBOL_REFRESH, LV_SYMBOL_PLAY,
-    LV_SYMBOL_IMAGE, "U", LV_SYMBOL_DOWNLOAD, "i", LV_SYMBOL_POWER,
-    "Z"
+    LV_SYMBOL_IMAGE, "U", LV_SYMBOL_DOWNLOAD, "Z", LV_SYMBOL_POWER,
+    "i"
 };
 static const uint32_t g_settings_card_colors[] = {
     0xECF3FF, 0xF2EDFF, 0xE8F7F6,
-    0xFFF1E2, 0xEBF7E9, 0xE8F1FF, 0xE8F7F6, 0xF2EDFF, 0xFDECEF,
-    0xE8F1FF,
+    0xFFF1E2, 0xEBF7E9, 0xE8F1FF, 0xE8F7F6, 0xE8F1FF, 0xFDECEF,
+    0xF2EDFF,
 };
 static const uint32_t g_settings_pressed_colors[] = {
     0xD9E8FF, 0xE5DBFF, 0xD3EFEC,
-    0xFFE0BD, 0xD8EED5, 0xD6E5FC, 0xD3EFEC, 0xE5DBFF, 0xF9D8DF,
-    0xD6E5FC,
+    0xFFE0BD, 0xD8EED5, 0xD6E5FC, 0xD3EFEC, 0xD6E5FC, 0xF9D8DF,
+    0xE5DBFF,
 };
 static const uint32_t g_settings_border_colors[] = {
     0xCCDDF8, 0xDED3F4, 0xCBE7E3,
-    0xF4D6B4, 0xCDE4C9, 0xCADCF5, 0xCBE7E3, 0xDED3F4, 0xF2CED6,
-    0xCADCF5,
+    0xF4D6B4, 0xCDE4C9, 0xCADCF5, 0xCBE7E3, 0xCADCF5, 0xF2CED6,
+    0xDED3F4,
 };
 static const uint32_t g_settings_icon_colors[] = {
     0x4B7EF0, 0x8359DF, 0x31A6A3,
-    0xF79217, 0x53A85C, 0x3976C5, 0x169C92, 0x8359DF, 0xEC536D,
-    0x3976C5,
+    0xF79217, 0x53A85C, 0x3976C5, 0x169C92, 0x3976C5, 0xEC536D,
+    0x8359DF,
 };
 
 static const uint32_t g_vaxp_baud_rates[] = {
@@ -6712,12 +6712,12 @@ static void settings_refresh_nav_values(void)
     lv_label_set_text(g_settings_nav_values[6],
                       settings_text("A/B protected OTA"));
     lv_label_set_text(g_settings_nav_values[7],
-                      settings_text("DongshanPI CanMV-K230"));
+                      sleep_timeout_name(
+                          g_system_settings.sleep_timeout_seconds));
     lv_label_set_text(g_settings_nav_values[8],
                       settings_text("Restart, flash, or shut down"));
     lv_label_set_text(g_settings_nav_values[9],
-                      sleep_timeout_name(
-                          g_system_settings.sleep_timeout_seconds));
+                      settings_text("DongshanPI CanMV-K230"));
 }
 
 static lv_obj_t *settings_section(lv_obj_t *parent, int section,
@@ -6843,7 +6843,7 @@ static void settings_picker_open(settings_picker_kind_t kind)
         options = sleep_timeout_options_text();
         selected = sleep_timeout_selection(
             g_system_settings.sleep_timeout_seconds);
-        section = 9;
+        section = 7;
         break;
     default:
         return;
@@ -7047,7 +7047,7 @@ static void settings_nav_cb(lv_event_t *event)
     case 5:
         settings_picker_open(SETTINGS_PICKER_VAXP_BAUD);
         return;
-    case 9:
+    case 7:
         settings_picker_open(SETTINGS_PICKER_SLEEP_TIMEOUT);
         return;
     default:
@@ -7363,8 +7363,8 @@ static void create_settings_view(lv_obj_t *screen)
     static const char *const initial_values[] = {
         "Not connected", "English", "UTC+08:00",
         "Desktop", "Rear", "115200 baud",
-        "A/B protected OTA", "DongshanPI CanMV-K230",
-        "Restart, flash, or shut down", "5 minutes",
+        "A/B protected OTA", "5 minutes",
+        "Restart, flash, or shut down", "DongshanPI CanMV-K230",
     };
     const lv_font_t *nav_font =
         g_system_settings.language == DSHANPI_LANG_EN
@@ -7712,7 +7712,7 @@ static void create_settings_view(lv_obj_t *screen)
     lv_obj_align(safety_hint, LV_ALIGN_TOP_MID, 0, 306);
     ota_refresh_ui();
 
-    lv_obj_t *about = settings_section(g_settings_panels[7], 7, 388);
+    lv_obj_t *about = settings_section(g_settings_panels[9], 9, 388);
     static const char *const about_titles[] = {
         "System Version", "Model Name", "Operating System", "nncase Version"
     };
@@ -7727,7 +7727,7 @@ static void create_settings_view(lv_obj_t *screen)
         lv_obj_set_style_radius(info, 20, 0);
         lv_obj_set_style_border_width(info, 1, 0);
         lv_obj_set_style_border_color(
-            info, lv_color_hex(g_settings_border_colors[7]), 0);
+            info, lv_color_hex(g_settings_border_colors[9]), 0);
         lv_obj_set_style_bg_color(info, lv_color_hex(0xFFFFFF), 0);
         lv_obj_set_style_pad_all(info, 0, 0);
         lv_obj_remove_flag(info, LV_OBJ_FLAG_SCROLLABLE);
