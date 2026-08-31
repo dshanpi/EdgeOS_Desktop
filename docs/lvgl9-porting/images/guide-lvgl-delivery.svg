@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">LVGL 资源、性能和 Tina SDK 集成交付链</title>
+  <desc id="desc">字体和图片先形成可运行程序，随后记录性能基线，最后作为 Tina 软件包进入固件并在板端验收。</desc>
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FAFCFF"/><stop offset="1" stop-color="#F0F6FC"/></linearGradient>
+    <filter id="sh4" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="ar4" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6686AA"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.h{font:700 21px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}.s{font:16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#60758A}.c{font:700 16px Consolas,"SFMono-Regular",monospace;fill:#285F99}</style>
+  </defs>
+  <rect width="1200" height="540" rx="28" fill="url(#bg4)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">从“能运行”走到“能交付”</text>
+  <text x="55" y="92" class="cn" font-size="18" fill="#60758C">资源、性能、软件包和固件必须形成一条可追溯的链。</text>
+
+  <g filter="url(#sh4)">
+    <rect x="55" y="155" width="220" height="245" rx="22" fill="#FFF" stroke="#CDBFE8" stroke-width="2"/>
+    <text x="165" y="200" class="h" text-anchor="middle">字体与图片</text>
+    <rect x="85" y="230" width="160" height="42" rx="11" fill="#F3F0FC"/><text x="165" y="257" class="s" text-anchor="middle">C 数组：随程序</text>
+    <rect x="85" y="288" width="160" height="42" rx="11" fill="#F3F0FC"/><text x="165" y="315" class="s" text-anchor="middle">资源文件：随文件系统</text>
+    <text x="165" y="365" class="cn" font-size="16" text-anchor="middle" fill="#6D568D">字形・格式・体积</text>
+  </g>
+  <path d="M275 278H340" stroke="#6686AA" stroke-width="4" marker-end="url(#ar4)"/>
+
+  <g filter="url(#sh4)">
+    <rect x="355" y="155" width="220" height="245" rx="22" fill="#FFF" stroke="#B8D2EC" stroke-width="2"/>
+    <text x="465" y="200" class="h" text-anchor="middle">外部工程基线</text>
+    <text x="465" y="245" class="cn" font-size="17" text-anchor="middle" fill="#48657F">显示、触摸、动画</text>
+    <text x="465" y="280" class="cn" font-size="17" text-anchor="middle" fill="#48657F">中文、图片、页面</text>
+    <rect x="405" y="320" width="120" height="42" rx="11" fill="#EAF3FF"/><text x="465" y="347" class="c" text-anchor="middle">PASS</text>
+  </g>
+  <path d="M575 278H640" stroke="#6686AA" stroke-width="4" marker-end="url(#ar4)"/>
+
+  <g filter="url(#sh4)">
+    <rect x="655" y="155" width="220" height="245" rx="22" fill="#FFF" stroke="#A4D1B7" stroke-width="2"/>
+    <text x="765" y="200" class="h" text-anchor="middle">性能基线</text>
+    <text x="765" y="245" class="cn" font-size="17" text-anchor="middle" fill="#416A54">FPS・CPU・RSS</text>
+    <text x="765" y="280" class="cn" font-size="17" text-anchor="middle" fill="#416A54">触摸延迟・程序体积</text>
+    <rect x="700" y="320" width="130" height="42" rx="11" fill="#ECF8F1"/><text x="765" y="347" class="cn" font-size="16" text-anchor="middle" fill="#28734F">一次只改一项</text>
+  </g>
+  <path d="M875 278H940" stroke="#6686AA" stroke-width="4" marker-end="url(#ar4)"/>
+
+  <g filter="url(#sh4)">
+    <rect x="955" y="135" width="190" height="285" rx="22" fill="#2463A9"/>
+    <text x="1050" y="185" class="cn" font-size="22" font-weight="700" text-anchor="middle" fill="#FFF">Tina SDK</text>
+    <rect x="980" y="215" width="140" height="38" rx="10" fill="#FFF" fill-opacity="0.16"/><text x="1050" y="240" class="mono" font-size="16" font-weight="700" text-anchor="middle" style="fill:#FFFFFF">package</text>
+    <rect x="980" y="266" width="140" height="38" rx="10" fill="#FFF" fill-opacity="0.16"/><text x="1050" y="291" class="mono" font-size="16" font-weight="700" text-anchor="middle" style="fill:#FFFFFF">Config.in</text>
+    <rect x="980" y="317" width="140" height="38" rx="10" fill="#FFF" fill-opacity="0.16"/><text x="1050" y="342" class="mono" font-size="16" font-weight="700" text-anchor="middle" style="fill:#FFFFFF">Makefile</text>
+    <text x="1050" y="392" class="cn" font-size="16" text-anchor="middle" fill="#DDEBFA">→ 固件 → V853</text>
+  </g>
+
+  <rect x="250" y="465" width="700" height="42" rx="14" fill="#FFF5E8" stroke="#E9C590"/>
+  <text x="600" y="493" class="cn" font-size="17" text-anchor="middle" fill="#7B5322">外部工程没有通过时，不要提前进入 SDK；否则错误边界会混在一起。</text>
+</svg>

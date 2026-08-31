@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">从编译产物到完整烧写固件的打包流程</title>
+  <desc id="desc">先确认 make 成功和组件镜像非空，再准备 100ASK 环境，执行一次 pack，检查退出码，最后检查完整固件并记录 SHA-256。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF6FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#688CB4"/>
+    </marker>
+    <style>
+      .cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+      .mono{font-family:Consolas,"SFMono-Regular",monospace}
+      .head{font:700 20px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#1C4068}
+      .sub{font:16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#5A7086}
+      .code{font:700 17px Consolas,"SFMono-Regular",monospace;fill:#2463A9}
+    </style>
+  </defs>
+
+  <rect width="1200" height="440" rx="28" fill="url(#bg)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">完整固件要经过两次验收</text>
+  <text x="55" y="94" class="cn" font-size="18" fill="#60758C">先确认编译产物，再确认 pack 本身和最终 .img，旧文件不能冒充本次成功。</text>
+
+  <path d="M258 235H287 M493 235H522 M728 235H757 M963 235H992" stroke="#688CB4" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="145" width="218" height="180" rx="20" fill="#FFFFFF" stroke="#CADCED" stroke-width="2"/>
+    <circle cx="75" cy="180" r="18" fill="#2463A9"/>
+    <text x="75" y="187" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+    <text x="105" y="187" class="head">编译通过</text>
+    <text x="149" y="232" class="code" text-anchor="middle">MAKE_EXIT_CODE=0</text>
+    <text x="149" y="271" class="mono" font-size="16" text-anchor="middle" fill="#4E6B87">boot.img + rootfs.img</text>
+    <text x="149" y="301" class="sub" text-anchor="middle">都存在且非空</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="275" y="145" width="218" height="180" rx="20" fill="#FFFFFF" stroke="#CADCED" stroke-width="2"/>
+    <circle cx="310" cy="180" r="18" fill="#527EAD"/>
+    <text x="310" y="187" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+    <text x="340" y="187" class="head">环境就绪</text>
+    <text x="384" y="235" class="code" text-anchor="middle">source + lunch</text>
+    <text x="384" y="274" class="sub" text-anchor="middle">新终端重新加载</text>
+    <text x="384" y="301" class="sub" text-anchor="middle">只恢复已有本地工具</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="510" y="145" width="218" height="180" rx="20" fill="#EAF3FF" stroke="#9DBDDF" stroke-width="2"/>
+    <circle cx="545" cy="180" r="18" fill="#2463A9"/>
+    <text x="545" y="187" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+    <text x="575" y="187" class="head">执行一次</text>
+    <text x="619" y="256" class="mono" font-size="34" font-weight="700" text-anchor="middle" fill="#2463A9">pack</text>
+    <text x="619" y="299" class="sub" text-anchor="middle">等待命令结束</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="745" y="145" width="218" height="180" rx="20" fill="#FFF8E8" stroke="#E7C168" stroke-width="2"/>
+    <circle cx="780" cy="180" r="18" fill="#C68A22"/>
+    <text x="780" y="187" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+    <text x="810" y="187" class="head">检查 pack</text>
+    <text x="854" y="247" class="code" text-anchor="middle">PACK_EXIT_CODE=0</text>
+    <text x="854" y="292" class="sub" text-anchor="middle">非 0 立即停止</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="980" y="135" width="180" height="200" rx="20" fill="#EAF8F0" stroke="#8AC5A4" stroke-width="2"/>
+    <circle cx="1015" cy="170" r="18" fill="#21825C"/>
+    <text x="1015" y="177" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFFFFF">5</text>
+    <text x="1045" y="177" class="head">完整固件</text>
+    <text x="1070" y="218" class="mono" font-size="16" font-weight="700" text-anchor="middle" fill="#187451">uart0.img</text>
+    <text x="1070" y="257" class="sub" text-anchor="middle">非空 + 时间正确</text>
+    <text x="1070" y="291" class="mono" font-size="16" font-weight="700" text-anchor="middle" fill="#187451">SHA-256</text>
+    <text x="1070" y="318" class="sub" text-anchor="middle">复制后对比</text>
+  </g>
+
+  <rect x="345" y="370" width="510" height="42" rx="14" fill="#FFF0F0" stroke="#E5B4B4"/>
+  <circle cx="378" cy="391" r="13" fill="#C94B4B"/>
+  <path d="M373 386L383 396M383 386L373 396" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="404" y="398" class="cn" font-size="17" fill="#7B4141">pack 只生成固件文件，不等于已经烧录开发板。</text>
+</svg>

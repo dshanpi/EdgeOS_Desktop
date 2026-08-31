@@ -1,8 +1,18 @@
 # EdgeOS Desktop Documentation Site
 
-此分支用于建设 [EdgeOS Desktop](https://github.com/dshanpi/EdgeOS_Desktop) 文档网站。
+本分支用于维护 EdgeOS Desktop 文档网站源码。
 
-当前仅用于验证 `docs-site` 独立分支及其远端展示效果；后续文档网站源码将在此分支中维护。
+## 本地开发
 
-- 产品源码分支：`main`
-- 文档网站分支：`docs-site`
+```bash
+npm ci
+npm start -- --port 3001
+```
+
+## 生产构建
+
+```bash
+npm run build
+```
+
+站点计划发布到 <https://edgeos.100ask.net/>。

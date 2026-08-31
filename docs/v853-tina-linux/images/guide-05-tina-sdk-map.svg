@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Tina SDK 主要目录示意图</title>
+  <desc id="desc">从 Tina SDK 根目录连接到编译入口、板级配置、底层源码、软件包和输出目录。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F7FAFF"/><stop offset="1" stop-color="#EEF5FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#2A4365" flood-opacity="0.12"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#7393BE"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.card{fill:#fff;stroke:#D7E3F4;stroke-width:2}.label{font-size:24px;font-weight:700;fill:#183B66}.hint{font-size:18px;fill:#52677F}.path{font-size:21px;font-weight:700;fill:#2463A9}</style>
+  </defs>
+  <rect width="1200" height="620" rx="28" fill="url(#bg)"/>
+  <text x="60" y="62" class="cn" font-size="30" font-weight="700" fill="#153A62">Tina SDK：先认这 5 个位置</text>
+  <text x="60" y="96" class="cn" font-size="18" fill="#60758C">现在不用读懂所有源码；知道“入口、配置、底层、软件、输出”在哪里就够了。</text>
+  <g filter="url(#shadow)">
+    <rect x="390" y="125" width="420" height="100" rx="20" fill="#2463A9"/>
+    <path d="M425 158h44l12 12h63v34H425z" fill="#D9ECFF" opacity="0.95"/>
+    <text x="565" y="164" class="cn" font-size="20" fill="#DCEBFC">SDK 根目录</text>
+    <text x="565" y="199" class="mono" font-size="23" font-weight="700" fill="#FFFFFF">tina-v853-100ask/</text>
+  </g>
+  <path d="M600 225V257 M600 257H165V291 M600 257H455V291 M600 257H745V291 M600 257H1035V291" fill="none" stroke="#7393BE" stroke-width="3" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect class="card" x="45" y="300" width="240" height="145" rx="18"/>
+    <circle cx="80" cy="338" r="21" fill="#DCEEFF"/><path d="M70 338h20M80 328v20" stroke="#2463A9" stroke-width="4" stroke-linecap="round"/>
+    <text x="112" y="345" class="mono path">build/</text><text x="70" y="387" class="cn label">开工按钮</text><text x="70" y="419" class="mono hint">envsetup.sh</text>
+    <rect class="card" x="335" y="300" width="240" height="145" rx="18"/>
+    <circle cx="370" cy="338" r="21" fill="#E6F7EE"/><path d="M361 331h18v15h-18z M365 326h10" fill="none" stroke="#21825C" stroke-width="3"/>
+    <text x="402" y="345" class="mono path">target/ device/</text><text x="360" y="387" class="cn label">开发板配方</text><text x="360" y="419" class="cn hint">V853 + 100ASK</text>
+    <rect class="card" x="625" y="300" width="240" height="145" rx="18"/>
+    <circle cx="660" cy="338" r="21" fill="#FFF0DC"/><path d="M650 342l10-14 10 14M652 346h16" fill="none" stroke="#B66A16" stroke-width="3" stroke-linecap="round"/>
+    <text x="692" y="345" class="mono path">lichee/</text><text x="650" y="387" class="cn label">系统底层</text><text x="650" y="419" class="cn hint">启动程序 + 内核</text>
+    <rect class="card" x="915" y="300" width="240" height="145" rx="18"/>
+    <circle cx="950" cy="338" r="21" fill="#F0E8FF"/><rect x="941" y="329" width="18" height="18" rx="3" fill="none" stroke="#7651B7" stroke-width="3"/>
+    <text x="982" y="345" class="mono path">package/</text><text x="940" y="387" class="cn label">系统软件</text><text x="940" y="419" class="cn hint">程序 + 第三方组件</text>
+  </g>
+  <path d="M600 445V486" fill="none" stroke="#7393BE" stroke-width="3" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="345" y="495" width="510" height="82" rx="18" fill="#E9F8EF" stroke="#8AC5A4" stroke-width="2" stroke-dasharray="8 6"/>
+    <text x="390" y="530" class="mono" font-size="25" font-weight="700" fill="#187451">out/</text><text x="475" y="530" class="cn" font-size="23" font-weight="700" fill="#285F4A">编译后出现的“成品区”</text>
+    <text x="390" y="558" class="cn" font-size="17" fill="#4E7162">第一次编译前没有这个目录，也属于正常现象。</text>
+  </g>
+</svg>

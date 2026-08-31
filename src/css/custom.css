@@ -1,0 +1,342 @@
+/* Course visual system */
+:root {
+  --ifm-color-primary: #07883d;
+  --ifm-color-primary-dark: #067a37;
+  --ifm-color-primary-darker: #067434;
+  --ifm-color-primary-darkest: #055f2b;
+  --ifm-color-primary-light: #099645;
+  --ifm-color-primary-lighter: #0a9d48;
+  --ifm-color-primary-lightest: #19b65a;
+  --ifm-background-color: #fcfdfc;
+  --ifm-background-surface-color: #f7f8f9;
+  --ifm-navbar-height: 4rem;
+  --ifm-font-family-base: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei",
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ifm-font-family-monospace: "JetBrains Mono", "Cascadia Code", "SFMono-Regular",
+    Consolas, "Liberation Mono", monospace;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-heading-font-weight: 750;
+  --ifm-code-font-size: 0.9rem;
+  --ifm-global-radius: 0.65rem;
+  --docusaurus-highlighted-code-line-bg: rgba(7, 136, 61, 0.12);
+  --course-border: #e4e7ec;
+  --course-shadow: 0 10px 28px rgba(20, 57, 34, 0.08);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4ade80;
+  --ifm-color-primary-dark: #31d970;
+  --ifm-color-primary-darker: #25d568;
+  --ifm-color-primary-darkest: #1dab52;
+  --ifm-color-primary-light: #63e390;
+  --ifm-color-primary-lighter: #70e69a;
+  --ifm-color-primary-lightest: #a5f0bd;
+  --ifm-background-color: #141a16;
+  --ifm-background-surface-color: #1b221e;
+  --docusaurus-highlighted-code-line-bg: rgba(74, 222, 128, 0.17);
+  --course-border: rgba(205, 225, 213, 0.14);
+  --course-shadow: 0 16px 42px rgba(0, 0, 0, 0.3);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(22, 163, 74, 0.24);
+}
+
+/* Navbar and footer */
+.navbar {
+  border-bottom: 1px solid var(--course-border);
+  background: var(--ifm-navbar-background-color);
+  box-shadow: none;
+}
+
+.navbar__brand {
+  gap: 0.25rem;
+}
+
+.navbar__logo {
+  height: 2rem;
+}
+
+.navbar__title {
+  font-size: 0.96rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.navbar__link {
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #14231a;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Documentation reading experience */
+.theme-doc-markdown {
+  color: var(--ifm-font-color-base);
+  font-size: 1rem;
+  line-height: 1.82;
+  overflow-wrap: anywhere;
+}
+
+.theme-doc-markdown > header + p,
+.theme-doc-markdown > h1 + p {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1.04rem;
+}
+
+.theme-doc-markdown h1:first-child,
+.theme-doc-markdown header h1 {
+  margin-bottom: 1.5rem;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.22;
+  letter-spacing: -0.045em;
+}
+
+.theme-doc-markdown h2 {
+  margin-top: 3.1rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--course-border);
+  font-size: clamp(1.45rem, 2.5vw, 1.8rem);
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+}
+
+.theme-doc-markdown h3 {
+  margin-top: 2.2rem;
+  font-size: 1.28rem;
+  line-height: 1.45;
+}
+
+.theme-doc-markdown h4 {
+  margin-top: 1.8rem;
+  font-size: 1.08rem;
+}
+
+.theme-doc-markdown h2::before {
+  display: inline-block;
+  width: 0.24rem;
+  height: 1.05em;
+  margin-right: 0.65rem;
+  border-radius: 999px;
+  background: var(--ifm-color-primary);
+  content: '';
+  vertical-align: -0.12em;
+}
+
+.theme-doc-markdown a:not(.button) {
+  text-underline-offset: 0.18em;
+}
+
+.theme-doc-markdown ul,
+.theme-doc-markdown ol {
+  padding-left: 1.45rem;
+}
+
+.theme-doc-markdown li + li {
+  margin-top: 0.28rem;
+}
+
+.theme-doc-markdown blockquote {
+  margin: 1.4rem 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(7, 136, 61, 0.2);
+  border-left: 0.26rem solid var(--ifm-color-primary);
+  border-radius: 0.15rem 0.7rem 0.7rem 0.15rem;
+  background: rgba(7, 136, 61, 0.055);
+  color: var(--ifm-color-emphasis-800);
+}
+
+.theme-doc-markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.theme-admonition {
+  margin: 1.5rem 0;
+  border: 1px solid var(--course-border);
+  border-radius: 0.8rem;
+  box-shadow: 0 8px 24px rgba(20, 57, 34, 0.05);
+}
+
+/* Wide technical tables stay usable on mobile. */
+.theme-doc-markdown table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 1.5rem 0 2rem;
+  border: 1px solid var(--course-border);
+  border-radius: 0.72rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.92rem;
+  line-height: 1.62;
+  overflow-x: auto;
+  box-shadow: 0 6px 20px rgba(20, 57, 34, 0.04);
+}
+
+.theme-doc-markdown table th {
+  background: color-mix(in srgb, var(--ifm-color-primary) 8%, var(--ifm-background-color));
+  color: var(--ifm-heading-color);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.theme-doc-markdown table th,
+.theme-doc-markdown table td {
+  min-width: 7rem;
+  padding: 0.72rem 0.85rem;
+  border-color: var(--course-border);
+  vertical-align: top;
+}
+
+.theme-doc-markdown table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--ifm-background-surface-color) 72%, transparent);
+}
+
+/* Screenshots and diagrams */
+.theme-doc-markdown img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 52rem;
+  margin: 1.65rem auto;
+  border: 1px solid var(--course-border);
+  border-radius: 0.75rem;
+  background: #fff;
+  object-fit: contain;
+  box-shadow: var(--course-shadow);
+}
+
+.theme-doc-markdown img[src$='.svg'] {
+  padding: clamp(0.25rem, 1vw, 0.75rem);
+}
+
+/* Commands and source snippets */
+.theme-code-block {
+  margin: 1.35rem 0;
+  border: 1px solid var(--course-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 22px rgba(20, 57, 34, 0.07);
+}
+
+.theme-code-block pre {
+  max-height: 42rem;
+  line-height: 1.62;
+  overflow: auto;
+}
+
+:not(pre) > code {
+  padding: 0.14rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 15%, transparent);
+  border-radius: 0.32rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 7%, var(--ifm-background-color));
+  color: color-mix(in srgb, var(--ifm-color-primary-darkest) 82%, var(--ifm-font-color-base));
+  font-size: 0.88em;
+}
+
+[data-theme='dark'] :not(pre) > code {
+  color: var(--ifm-color-primary-lightest);
+}
+
+.theme-doc-markdown input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.35rem;
+  accent-color: var(--ifm-color-primary);
+  vertical-align: -0.12rem;
+}
+
+/* Sidebar, TOC, category cards and pagination */
+.theme-doc-sidebar-container {
+  border-right-color: var(--course-border) !important;
+  background: color-mix(in srgb, var(--ifm-background-surface-color) 62%, transparent);
+}
+
+.menu__link {
+  border-radius: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 720;
+}
+
+.theme-doc-toc-desktop {
+  font-size: 0.81rem;
+  line-height: 1.55;
+}
+
+.theme-doc-toc-desktop .table-of-contents__link--active {
+  font-weight: 700;
+}
+
+.card.padding--lg {
+  border-color: var(--course-border);
+  border-radius: 0.85rem;
+  box-shadow: 0 8px 24px rgba(20, 57, 34, 0.05);
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.card.padding--lg:hover {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 48%, transparent);
+  box-shadow: 0 13px 30px rgba(20, 57, 34, 0.1);
+  transform: translateY(-3px);
+}
+
+.pagination-nav__link {
+  border-color: var(--course-border);
+  border-radius: 0.8rem;
+  box-shadow: 0 6px 18px rgba(20, 57, 34, 0.04);
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+}
+
+.breadcrumbs__link {
+  border-radius: 0.4rem;
+}
+
+@media (max-width: 996px) {
+  .theme-doc-markdown {
+    font-size: 0.97rem;
+  }
+
+  .theme-doc-markdown h1:first-child,
+  .theme-doc-markdown header h1 {
+    font-size: 2rem;
+  }
+
+  .theme-doc-markdown table th,
+  .theme-doc-markdown table td {
+    min-width: 6.4rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .theme-doc-markdown h2 {
+    margin-top: 2.55rem;
+    font-size: 1.4rem;
+  }
+
+  .theme-doc-markdown img {
+    margin: 1.25rem auto;
+    border-radius: 0.5rem;
+  }
+
+  .theme-doc-markdown table {
+    margin-right: -0.5rem;
+    font-size: 0.86rem;
+  }
+}

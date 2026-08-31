@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
+  <title id="title">AI Agent 兼容问题的审批顺序</title>
+  <desc id="desc">按当前错误依次判断 Python 2、DTC、glib2 和 gperf 问题，每次只批准一个与错误匹配的方案，最后重新编译并检查退出码与镜像。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF5FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6385AA"/>
+    </marker>
+    <style>
+      .cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+      .mono{font-family:Consolas,"SFMono-Regular",monospace}
+      .issue{font:700 21px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}
+      .choice{font:700 22px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#7551A6}
+      .note{font:16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#536B82}
+      .path{font:700 16px Consolas,"SFMono-Regular",monospace;fill:#2463A9}
+    </style>
+  </defs>
+
+  <rect width="1200" height="690" rx="28" fill="url(#bg)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">报什么错，才批准什么方案</text>
+  <text x="55" y="94" class="cn" font-size="18" fill="#60758C">每轮 make 结束后只处理当前问题，再开始下一轮；没有报错就直接跳过。</text>
+
+  <g filter="url(#shadow)">
+    <rect x="45" y="145" width="250" height="285" rx="20" fill="#FFFFFF" stroke="#C9DBEE" stroke-width="2"/>
+    <rect x="45" y="145" width="250" height="58" rx="20" fill="#EAF3FF"/>
+    <path d="M45 183H295V203H45Z" fill="#EAF3FF"/>
+    <text x="70" y="183" class="issue">① 缺少 Python 2</text>
+    <text x="170" y="246" class="choice" text-anchor="middle">批准 A</text>
+    <text x="170" y="283" class="note" text-anchor="middle">只在 SDK 内准备</text>
+    <text x="170" y="319" class="path" text-anchor="middle">local_python2/</text>
+    <rect x="72" y="356" width="196" height="45" rx="12" fill="#F4F8FC"/>
+    <text x="170" y="384" class="note" text-anchor="middle">不替换系统 Python</text>
+  </g>
+
+  <path d="M295 287H323" stroke="#6385AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="325" y="145" width="250" height="285" rx="20" fill="#FFFFFF" stroke="#D8CEF0" stroke-width="2"/>
+    <rect x="325" y="145" width="250" height="58" rx="20" fill="#F2EEFC"/>
+    <path d="M325 183H575V203H325Z" fill="#F2EEFC"/>
+    <text x="350" y="183" class="issue">② DTC 链接失败</text>
+    <text x="450" y="246" class="choice" text-anchor="middle">批准 C</text>
+    <text x="450" y="282" class="note" text-anchor="middle">再批准方案 1 备份旧对象</text>
+    <text x="450" y="319" class="path" text-anchor="middle">local_cc_wrap/</text>
+    <rect x="352" y="356" width="196" height="45" rx="12" fill="#F7F4FC"/>
+    <text x="450" y="384" class="note" text-anchor="middle">包装器与备份可撤销</text>
+  </g>
+
+  <path d="M575 287H603" stroke="#6385AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="605" y="145" width="250" height="285" rx="20" fill="#FFFFFF" stroke="#E8D7B5" stroke-width="2"/>
+    <rect x="605" y="145" width="250" height="58" rx="20" fill="#FFF6E4"/>
+    <path d="M605 183H855V203H605Z" fill="#FFF6E4"/>
+    <text x="630" y="183" class="issue">③ glib2 缺少 imp</text>
+    <text x="730" y="246" class="choice" text-anchor="middle">批准 E2</text>
+    <text x="730" y="282" class="note" text-anchor="middle">仅处理生成目录中的链接</text>
+    <text x="730" y="319" class="path" text-anchor="middle">out/host/bin/python</text>
+    <rect x="632" y="356" width="196" height="45" rx="12" fill="#FFF9EE"/>
+    <text x="730" y="384" class="note" text-anchor="middle">指向 SDK 内 Python 2</text>
+  </g>
+
+  <path d="M855 287H883" stroke="#6385AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="885" y="145" width="270" height="285" rx="20" fill="#FFFFFF" stroke="#BFDCCB" stroke-width="2"/>
+    <rect x="885" y="145" width="270" height="58" rx="20" fill="#EAF8F0"/>
+    <path d="M885 183H1155V203H885Z" fill="#EAF8F0"/>
+    <text x="910" y="183" class="issue">④ 缺少 gperf</text>
+    <text x="1020" y="246" class="choice" text-anchor="middle">批准 F</text>
+    <text x="1020" y="282" class="note" text-anchor="middle">只用 SDK 已有源码包</text>
+    <text x="1020" y="319" class="path" text-anchor="middle">local_gperf/</text>
+    <rect x="912" y="356" width="216" height="45" rx="12" fill="#F0FAF5"/>
+    <text x="1020" y="384" class="note" text-anchor="middle">生成 Ubuntu 主机工具</text>
+  </g>
+
+  <path d="M1020 430V478" stroke="#6385AA" stroke-width="4" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="235" y="480" width="730" height="100" rx="20" fill="#EAF8F0" stroke="#8BC6A5" stroke-width="2"/>
+    <text x="600" y="520" class="cn" font-size="21" font-weight="700" text-anchor="middle" fill="#226247">重新加载环境和已有工具 → 新一轮 make</text>
+    <text x="600" y="558" class="mono" font-size="18" font-weight="700" text-anchor="middle" fill="#187451">MAKE_EXIT_CODE=0 + boot.img + rootfs.img</text>
+  </g>
+
+  <rect x="300" y="615" width="600" height="44" rx="14" fill="#FFF0F0" stroke="#E5B4B4"/>
+  <circle cx="334" cy="637" r="13" fill="#C94B4B"/>
+  <path d="M329 632L339 642M339 632L329 642" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="360" y="644" class="cn" font-size="17" fill="#7B4141">错误不同：立即停止，不套用方案，也不要提前批量执行。</text>
+</svg>

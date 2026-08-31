@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">LVGL 9 移植学习路线</title>
+  <desc id="desc">先下载并固定源码，再用 AI 搭建工程，让 LCD、触摸和界面刷新正常工作，最后添加资源、检查性能并集成到 Tina SDK。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8FBFF"/><stop offset="1" stop-color="#EEF5FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6686AA"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.h{font:700 23px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}.t{font:700 18px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#214C77}.s{font:16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#62768B}</style>
+  </defs>
+  <rect width="1200" height="560" rx="28" fill="url(#bg)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">LVGL 9 移植不是一次“大跳跃”</text>
+  <text x="55" y="92" class="cn" font-size="18" fill="#60758C">先建立可复现基线，再逐条接通运行链路，最后进入 SDK。</text>
+
+  <g filter="url(#shadow)">
+    <rect x="55" y="135" width="315" height="320" rx="22" fill="#FFFFFF" stroke="#B8D2EC" stroke-width="2"/>
+    <circle cx="100" cy="180" r="25" fill="#2463A9"/><text x="100" y="188" class="cn" font-size="22" font-weight="700" text-anchor="middle" fill="#FFF">1</text>
+    <text x="145" y="188" class="h">把地基固定住</text>
+    <rect x="85" y="225" width="255" height="52" rx="13" fill="#EEF5FF"/><text x="105" y="258" class="t">13　下载并固定源码</text>
+    <rect x="85" y="292" width="255" height="52" rx="13" fill="#EEF5FF"/><text x="105" y="325" class="t">16　用 AI 搭建工程</text>
+    <rect x="85" y="359" width="255" height="52" rx="13" fill="#EEF5FF"/><text x="105" y="392" class="t">检查　交叉编译通过</text>
+    <text x="215" y="438" class="s" text-anchor="middle">结果：同一份源码能重复构建</text>
+  </g>
+
+  <path d="M380 295H430" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="445" y="135" width="315" height="320" rx="22" fill="#FFFFFF" stroke="#C8BCE9" stroke-width="2"/>
+    <circle cx="490" cy="180" r="25" fill="#7154B3"/><text x="490" y="188" class="cn" font-size="22" font-weight="700" text-anchor="middle" fill="#FFF">2</text>
+    <text x="535" y="188" class="h">让界面真正运转</text>
+    <rect x="475" y="225" width="255" height="52" rx="13" fill="#F3F0FC"/><text x="495" y="258" class="t">17　让界面显示到 LCD</text>
+    <rect x="475" y="292" width="255" height="52" rx="13" fill="#F3F0FC"/><text x="495" y="325" class="t">18　让触摸控制界面</text>
+    <rect x="475" y="359" width="255" height="52" rx="13" fill="#F3F0FC"/><text x="495" y="392" class="t">19　让界面持续刷新</text>
+    <text x="602" y="438" class="s" text-anchor="middle">结果：能显示、能点击、能刷新</text>
+  </g>
+
+  <path d="M770 295H820" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="835" y="135" width="310" height="320" rx="22" fill="#FFFFFF" stroke="#9DD2B4" stroke-width="2"/>
+    <circle cx="880" cy="180" r="25" fill="#23835A"/><text x="880" y="188" class="cn" font-size="22" font-weight="700" text-anchor="middle" fill="#FFF">3</text>
+    <text x="925" y="188" class="h">从样例变成产品</text>
+    <rect x="865" y="225" width="250" height="52" rx="13" fill="#ECF8F1"/><text x="885" y="258" class="t">20　添加字体和图片</text>
+    <rect x="865" y="292" width="250" height="52" rx="13" fill="#ECF8F1"/><text x="885" y="325" class="t">21　检查性能和稳定性</text>
+    <rect x="865" y="359" width="250" height="52" rx="13" fill="#ECF8F1"/><text x="885" y="392" class="t">22　加入 Tina SDK</text>
+    <text x="990" y="438" class="s" text-anchor="middle">结果：进入固件并可持续复现</text>
+  </g>
+
+  <rect x="285" y="490" width="630" height="42" rx="14" fill="#FFF5E8" stroke="#E9C590"/>
+  <text x="600" y="518" class="cn" font-size="18" text-anchor="middle" fill="#7B5322">每一阶段先验收，再进入下一阶段；不要同时修改多个变量。</text>
+</svg>

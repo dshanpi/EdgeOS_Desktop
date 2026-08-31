@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
+  <title id="title">V853 SDK 从课程资料虚拟机搬到 Ubuntu 24.04</title>
+  <desc id="desc">先解压 Ubuntu 18.04 资料虚拟机，从中取出 V853 SDK，经 Windows 手动中转后拖入 Ubuntu 24.04，校验无误再解压到本地工作目录。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f2f8ff"/><stop offset="1" stop-color="#f5fff8"/></linearGradient>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0 0l11 5.5L0 11z" fill="#467ca9"/></marker>
+    <filter id="shadow"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="1200" height="470" rx="28" fill="url(#bg)"/>
+  <text x="600" y="49" text-anchor="middle" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="28" font-weight="700" fill="#243a4c">V853 SDK 搬家：旧虚拟机取资料，Ubuntu 24.04 做开发</text>
+  <g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" text-anchor="middle">
+    <g filter="url(#shadow)">
+      <rect x="25" y="105" width="200" height="245" rx="23" fill="#fff"/>
+      <path d="M77 153h72l20 20v76H77z" fill="#deecff" stroke="#477fb4" stroke-width="4"/>
+      <path d="M149 153v22h20" fill="none" stroke="#477fb4" stroke-width="4"/>
+      <text x="125" y="281" font-size="20" font-weight="700" fill="#26394b">3 个虚拟机分卷</text>
+      <text x="125" y="311" font-size="15" fill="#687786">从 .001 开始解压</text>
+    </g>
+    <g filter="url(#shadow)">
+      <rect x="262" y="105" width="200" height="245" rx="23" fill="#fff"/>
+      <rect x="310" y="150" width="104" height="76" rx="10" fill="#efe7ff" stroke="#745ab4" stroke-width="4"/>
+      <path d="M343 244h38m-19-18v18" stroke="#745ab4" stroke-width="5" stroke-linecap="round"/>
+      <text x="362" y="281" font-size="20" font-weight="700" fill="#26394b">Ubuntu 18.04</text>
+      <text x="362" y="311" font-size="15" fill="#687786">只负责取出 SDK</text>
+    </g>
+    <g filter="url(#shadow)">
+      <rect x="499" y="105" width="200" height="245" rx="23" fill="#fff"/>
+      <rect x="548" y="150" width="102" height="76" rx="9" fill="#dff0ff" stroke="#3f79aa" stroke-width="4"/>
+      <path d="M599 226v20m-36 0h72" stroke="#3f79aa" stroke-width="5" stroke-linecap="round"/>
+      <text x="599" y="281" font-size="20" font-weight="700" fill="#26394b">Windows 中转</text>
+      <text x="599" y="311" font-size="15" fill="#687786">手动拖出并保留</text>
+    </g>
+    <g filter="url(#shadow)">
+      <rect x="736" y="105" width="200" height="245" rx="23" fill="#fff"/>
+      <path d="M782 153h108v76H782zM799 139h38l15 14h-53z" fill="#e1f6eb" stroke="#3f8c67" stroke-width="4"/>
+      <text x="836" y="281" font-size="20" font-weight="700" fill="#26394b">Ubuntu 24.04</text>
+      <text x="836" y="311" font-size="15" fill="#687786">拖入 incoming</text>
+    </g>
+    <g filter="url(#shadow)">
+      <rect x="973" y="105" width="202" height="245" rx="23" fill="#fff"/>
+      <rect x="1020" y="148" width="108" height="80" rx="9" fill="#fff0da" stroke="#c17b2d" stroke-width="4"/>
+      <path d="M1039 170l16 15-16 15m34 0h34" fill="none" stroke="#c17b2d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="1074" y="281" font-size="20" font-weight="700" fill="#26394b">校验后解压</text>
+      <text x="1074" y="311" font-size="15" fill="#687786">本地 sdk 目录</text>
+    </g>
+  </g>
+  <g stroke="#467ca9" stroke-width="5" marker-end="url(#arrow)">
+    <path d="M231 228h19"/><path d="M468 228h19"/><path d="M705 228h19"/><path d="M942 228h19"/>
+  </g>
+  <rect x="170" y="389" width="860" height="55" rx="27" fill="#fff"/>
+  <text x="600" y="413" text-anchor="middle" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="17" fill="#576979">文件名、大小和 SHA-256 都一致，才算搬运成功。</text>
+  <text x="600" y="436" text-anchor="middle" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="17" fill="#32815c">不配置共享目录；后续只在 Ubuntu 24.04 本地编译。</text>
+</svg>

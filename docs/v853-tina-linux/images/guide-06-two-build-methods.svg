@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">传统编译与 AI Agent 编译的两条路线</title>
+  <desc id="desc">两种方式都从 V853 SDK 开始，执行 source、lunch 和 make，最后检查退出码、boot 镜像和 rootfs 镜像。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8FBFF"/><stop offset="1" stop-color="#EEF5FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#5E86B5"/></marker>
+    <marker id="arrowPurple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#8068B5"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.head{font:700 21px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}.sub{font:16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#5B7086}.code{font:700 17px Consolas,"SFMono-Regular",monospace;fill:#2463A9}</style>
+  </defs>
+  <rect width="1200" height="560" rx="28" fill="url(#bg)"/>
+  <text x="55" y="60" class="cn" font-size="30" font-weight="700" fill="#153A62">同一个编译目标，两种操作方式</text>
+  <text x="55" y="94" class="cn" font-size="18" fill="#60758C">底层执行的都是 source → lunch → make，区别只是由你输入还是由 Agent 输入。</text>
+
+  <g filter="url(#shadow)">
+    <rect x="45" y="210" width="220" height="130" rx="20" fill="#2463A9"/>
+    <text x="155" y="252" class="cn" font-size="19" text-anchor="middle" fill="#DCEBFA">SDK 根目录</text>
+    <text x="155" y="287" class="mono" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">tina-v853-100ask</text>
+    <text x="155" y="317" class="cn" font-size="16" text-anchor="middle" fill="#DCEBFA">从这里开始</text>
+  </g>
+
+  <path d="M265 250C300 250 288 168 325 168" fill="none" stroke="#5E86B5" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <path d="M265 300C300 300 288 390 325 390" fill="none" stroke="#8068B5" stroke-width="4" marker-end="url(#arrowPurple)"/>
+
+  <text x="330" y="130" class="cn" font-size="18" font-weight="700" fill="#2463A9">方式一：传统编译</text>
+  <g filter="url(#shadow)">
+    <rect x="325" y="145" width="165" height="105" rx="17" fill="#FFFFFF" stroke="#C9DBEE" stroke-width="2"/>
+    <text x="407" y="184" class="head" text-anchor="middle">自己操作终端</text>
+    <text x="407" y="218" class="sub" text-anchor="middle">看命令、看输出</text>
+    <rect x="530" y="145" width="205" height="105" rx="17" fill="#FFFFFF" stroke="#C9DBEE" stroke-width="2"/>
+    <text x="632" y="184" class="code" text-anchor="middle">source + lunch 1</text>
+    <text x="632" y="218" class="sub" text-anchor="middle">选择 100ASK</text>
+    <rect x="775" y="145" width="135" height="105" rx="17" fill="#EAF3FF" stroke="#9DBDDF" stroke-width="2"/>
+    <text x="842" y="190" class="mono" font-size="27" font-weight="700" text-anchor="middle" fill="#2463A9">make</text>
+    <text x="842" y="220" class="sub" text-anchor="middle">等待完成</text>
+  </g>
+  <path d="M490 198H530 M735 198H775 M910 198H950" stroke="#5E86B5" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+  <text x="330" y="351" class="cn" font-size="18" font-weight="700" fill="#6C50A4">方式二：AI Agent 编译</text>
+  <g filter="url(#shadow)">
+    <rect x="325" y="368" width="165" height="105" rx="17" fill="#FFFFFF" stroke="#D8CEF0" stroke-width="2"/>
+    <text x="407" y="407" class="head" text-anchor="middle">选择 SDK</text>
+    <text x="407" y="441" class="sub" text-anchor="middle">Harness 工作区</text>
+    <rect x="530" y="368" width="205" height="105" rx="17" fill="#FFFFFF" stroke="#D8CEF0" stroke-width="2"/>
+    <text x="632" y="407" class="head" text-anchor="middle">Read Only</text>
+    <text x="632" y="441" class="sub" text-anchor="middle">先检查再授权</text>
+    <rect x="775" y="368" width="175" height="105" rx="17" fill="#F2EEFC" stroke="#B8A7DD" stroke-width="2"/>
+    <text x="862" y="402" class="head" text-anchor="middle">Workspace Write</text>
+    <text x="862" y="432" class="code" text-anchor="middle">Agent → make</text>
+    <text x="862" y="458" class="sub" text-anchor="middle">人工审批命令</text>
+  </g>
+  <path d="M490 421H530 M735 421H775 M950 421C970 421 955 352 970 352" fill="none" stroke="#8068B5" stroke-width="4" marker-end="url(#arrowPurple)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="970" y="185" width="190" height="190" rx="20" fill="#EAF8F0" stroke="#8BC6A5" stroke-width="2"/>
+    <text x="1065" y="227" class="head" text-anchor="middle" fill="#226247">共同验收</text>
+    <text x="1065" y="269" class="mono" font-size="17" font-weight="700" text-anchor="middle" fill="#187451">MAKE_EXIT_CODE=0</text>
+    <text x="1065" y="308" class="mono" font-size="20" font-weight="700" text-anchor="middle" fill="#187451">boot.img</text>
+    <text x="1065" y="342" class="mono" font-size="20" font-weight="700" text-anchor="middle" fill="#187451">rootfs.img</text>
+  </g>
+
+  <rect x="340" y="505" width="520" height="38" rx="14" fill="#FFF0F0" stroke="#E5B4B4"/>
+  <circle cx="372" cy="524" r="13" fill="#C94B4B"/><path d="M367 519l10 10M377 519l-10 10" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="398" y="531" class="cn" font-size="17" fill="#7B4141">二选一：不要在两个地方同时启动 make。</text>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">V853 100ASK 配置流程</title>
+  <desc id="desc">依次进入 SDK、加载环境、运行 lunch 选择第一项，并核对 100ASK 配置。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8FBFF"/><stop offset="1" stop-color="#EEF6FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6D91BB"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.num{font:700 20px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#fff}.title{font:700 23px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#1E4168}.cmd{font:700 17px Consolas,"SFMono-Regular",monospace;fill:#2463A9}.hint{font:17px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#5D7083}</style>
+  </defs>
+  <rect width="1200" height="480" rx="28" fill="url(#bg)"/>
+  <text x="56" y="60" class="cn" font-size="30" font-weight="700" fill="#153A62">4 步选中 100ASK 开发板</text>
+  <text x="56" y="94" class="cn" font-size="18" fill="#60758C">照着从左到右执行；第 3 步一定选 1。</text>
+  <path d="M280 244H330 M570 244H620 M860 244H910" stroke="#6D91BB" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="40" y="145" width="240" height="190" rx="20" fill="#FFFFFF" stroke="#D7E4F2" stroke-width="2"/>
+    <circle cx="78" cy="183" r="23" fill="#2463A9"/><text x="72" y="190" class="num">1</text><text x="113" y="190" class="title">进入 SDK</text>
+    <rect x="62" y="220" width="196" height="54" rx="10" fill="#EEF6FF"/><text x="78" y="252" class="cmd">cd tina-v853-...</text><text x="62" y="308" class="hint">先站到正确目录</text>
+    <rect x="330" y="145" width="240" height="190" rx="20" fill="#FFFFFF" stroke="#D7E4F2" stroke-width="2"/>
+    <circle cx="368" cy="183" r="23" fill="#2463A9"/><text x="362" y="190" class="num">2</text><text x="403" y="190" class="title">加载环境</text>
+    <rect x="352" y="220" width="196" height="54" rx="10" fill="#EEF6FF"/><text x="370" y="244" class="cmd">source build/</text><text x="373" y="264" class="cmd">envsetup.sh</text><text x="352" y="308" class="hint">当前终端获得命令</text>
+    <rect x="620" y="145" width="240" height="190" rx="20" fill="#FFF9EE" stroke="#EEC87C" stroke-width="3"/>
+    <circle cx="658" cy="183" r="23" fill="#D88612"/><text x="652" y="190" class="num">3</text><text x="693" y="190" class="title">运行 lunch</text>
+    <rect x="642" y="220" width="196" height="54" rx="10" fill="#FFF0D5"/><text x="718" y="252" class="cmd" fill="#A15C00">lunch</text><text x="642" y="308" class="cn" font-size="19" font-weight="700" fill="#A15C00">菜单输入 1 + 回车</text>
+    <rect x="910" y="145" width="250" height="190" rx="20" fill="#FFFFFF" stroke="#B7DFC9" stroke-width="2"/>
+    <circle cx="948" cy="183" r="23" fill="#21825C"/><text x="942" y="190" class="num">4</text><text x="983" y="190" class="title">核对结果</text>
+    <text x="935" y="235" class="cmd" fill="#187451">v853_100ask</text><text x="935" y="266" class="cmd" fill="#187451">v853-100ask</text><text x="935" y="297" class="cmd" fill="#187451">100ask</text>
+  </g>
+  <rect x="315" y="379" width="570" height="58" rx="15" fill="#E7F1FF"/>
+  <circle cx="350" cy="408" r="17" fill="#2463A9"/><text x="345" y="414" class="cn" font-size="20" font-weight="700" fill="#fff">!</text><text x="381" y="415" class="cn" font-size="19" fill="#284C73">换了新终端？重新执行 source 和 lunch。</text>
+</svg>

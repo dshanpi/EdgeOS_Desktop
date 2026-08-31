@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">V853 Tina SDK 编译与打包关系</title>
+  <desc id="desc">make 经过启动组件、内核和软件包编译后生成 boot 和 rootfs 组件镜像，make 成功后执行 pack 生成完整烧写镜像。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8FBFF"/><stop offset="1" stop-color="#EEF6FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#6D91BB"/></marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#3C9A70"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.head{font:700 23px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#1C4068}.sub{font:17px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#5A7086}.code{font:700 21px Consolas,"SFMono-Regular",monospace;fill:#2463A9}</style>
+  </defs>
+  <rect width="1200" height="520" rx="28" fill="url(#bg)"/>
+  <text x="56" y="60" class="cn" font-size="30" font-weight="700" fill="#153A62">先 make 编译，再 pack 打包</text>
+  <text x="56" y="94" class="cn" font-size="18" fill="#60758C">组件镜像与完整烧写包不是同一个东西，沿箭头看就不会混淆。</text>
+  <path d="M253 230H310 M540 230H597 M827 230H884" stroke="#6D91BB" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)">
+    <rect x="50" y="155" width="203" height="150" rx="20" fill="#2463A9"/><text x="151" y="218" class="mono" font-size="37" font-weight="700" text-anchor="middle" fill="#fff">make</text><text x="151" y="260" class="cn" font-size="18" text-anchor="middle" fill="#DDEBFA">开始编译</text>
+    <rect x="310" y="155" width="230" height="150" rx="20" fill="#FFFFFF" stroke="#D7E4F2" stroke-width="2"/>
+    <text x="425" y="203" class="head" text-anchor="middle">启动组件</text><text x="425" y="241" class="mono code" text-anchor="middle">spl → spl-pub</text><text x="425" y="274" class="sub" text-anchor="middle">继续看 success 提示</text>
+    <rect x="597" y="155" width="230" height="150" rx="20" fill="#FFFFFF" stroke="#D7E4F2" stroke-width="2"/>
+    <text x="712" y="203" class="head" text-anchor="middle">系统组件</text><text x="712" y="241" class="cn" font-size="20" font-weight="700" text-anchor="middle" fill="#2463A9">内核 + 软件包</text><text x="712" y="274" class="sub" text-anchor="middle">等待编译完成</text>
+    <rect x="884" y="145" width="266" height="170" rx="20" fill="#EAF8F0" stroke="#8AC5A4" stroke-width="2"/>
+    <text x="1017" y="190" class="head" text-anchor="middle" fill="#226247">组件镜像</text><text x="1017" y="233" class="mono" font-size="22" font-weight="700" text-anchor="middle" fill="#187451">boot.img</text><text x="1017" y="268" class="mono" font-size="22" font-weight="700" text-anchor="middle" fill="#187451">rootfs.img</text><text x="1017" y="297" class="cn" font-size="16" text-anchor="middle" fill="#4D7061">make 的验收产物</text>
+  </g>
+  <path d="M1017 315V365" stroke="#3C9A70" stroke-width="4" stroke-dasharray="8 7" fill="none" marker-end="url(#arrowGreen)"/>
+  <g filter="url(#shadow)">
+    <rect x="680" y="374" width="470" height="104" rx="20" fill="#FFFFFF" stroke="#8AC5A4" stroke-width="2" stroke-dasharray="8 6"/>
+    <rect x="704" y="395" width="86" height="58" rx="12" fill="#21825C"/><text x="747" y="431" class="mono" font-size="21" font-weight="700" text-anchor="middle" fill="#fff">pack</text>
+    <text x="815" y="417" class="cn" font-size="17" fill="#536D61">make 成功后执行打包</text><text x="815" y="448" class="mono" font-size="19" font-weight="700" fill="#187451">tina_v853-100ask_uart0.img</text>
+  </g>
+  <rect x="50" y="374" width="515" height="104" rx="20" fill="#FFF8E8" stroke="#E7C168" stroke-width="2"/>
+  <text x="80" y="413" class="cn" font-size="19" font-weight="700" fill="#8A5A00">成功判据</text><text x="80" y="447" class="mono" font-size="18" fill="#6B5A33">make completed successfully</text><text x="390" y="447" class="cn" font-size="18" fill="#6B5A33">并且返回值为 0</text>
+</svg>

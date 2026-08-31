@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">LVGL 在嵌入式 Linux 上的显示、输入和时间链路</title>
+  <desc id="desc">LVGL 的绘制结果经 fbdev 和 framebuffer 送往 LCD；触摸事件经 evdev 进入 LVGL；单调时钟提供 tick，应用主循环调用 lv_timer_handler 处理到期任务。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F8FBFF"/><stop offset="1" stop-color="#EEF6FF"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.12"/></filter>
+    <marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#5C84B3"/></marker>
+    <marker id="purple" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7B62B5"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#2D8A62"/></marker>
+    <marker id="orange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#C28A3B"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.h{font:700 19px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}.s{font:15px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#60758A}.c{font:700 16px Consolas,"SFMono-Regular",monospace;fill:#285F99}</style>
+  </defs>
+  <rect width="1200" height="600" rx="28" fill="url(#bg)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">界面能动起来，要接通三条链</text>
+  <text x="55" y="92" class="cn" font-size="18" fill="#60758C">显示向外输出，输入向内传递；tick 报时，主循环负责处理。</text>
+
+  <g filter="url(#shadow)">
+    <rect x="500" y="145" width="240" height="305" rx="24" fill="#2463A9"/>
+    <text x="620" y="198" class="cn" font-size="29" font-weight="700" text-anchor="middle" fill="#FFF">LVGL 9</text>
+    <rect x="535" y="225" width="170" height="42" rx="12" fill="#FFF" fill-opacity="0.16"/>
+    <text x="620" y="252" class="cn" font-size="17" text-anchor="middle" fill="#FFF">绘制结果向外送</text>
+    <rect x="535" y="282" width="170" height="42" rx="12" fill="#FFF" fill-opacity="0.16"/>
+    <text x="620" y="309" class="cn" font-size="17" text-anchor="middle" fill="#FFF">触摸事件送进来</text>
+    <rect x="535" y="339" width="170" height="42" rx="12" fill="#FFF" fill-opacity="0.16"/>
+    <text x="620" y="366" class="cn" font-size="17" text-anchor="middle" fill="#FFF">tick 提供时间基准</text>
+    <rect x="535" y="396" width="170" height="35" rx="11" fill="#FFF" fill-opacity="0.16"/>
+    <text x="620" y="419" class="cn" font-size="15" text-anchor="middle" fill="#FFF">处理刷新、输入和 Timer</text>
+  </g>
+
+  <!-- Display: LVGL -> fbdev -> framebuffer -> LCD -->
+  <path d="M740 205H790" stroke="#5C84B3" stroke-width="4" marker-end="url(#blue)"/>
+  <g filter="url(#shadow)">
+    <rect x="805" y="160" width="135" height="90" rx="17" fill="#FFF" stroke="#A9C7E4" stroke-width="2"/>
+    <text x="872" y="198" class="h" text-anchor="middle">fbdev 后端</text><text x="872" y="226" class="s" text-anchor="middle">显示输出</text>
+  </g>
+  <path d="M940 205H975" stroke="#5C84B3" stroke-width="4" marker-end="url(#blue)"/>
+  <g filter="url(#shadow)">
+    <rect x="990" y="160" width="120" height="90" rx="17" fill="#EAF3FF" stroke="#9FBFE0" stroke-width="2"/>
+    <text x="1050" y="198" class="h" text-anchor="middle">framebuffer</text><text x="1050" y="226" class="c" text-anchor="middle">/dev/fbX</text>
+  </g>
+  <path d="M1110 205H1140" stroke="#5C84B3" stroke-width="4" marker-end="url(#blue)"/>
+  <g filter="url(#shadow)"><rect x="1150" y="165" width="35" height="80" rx="9" fill="#ECF8F1" stroke="#91CAA9" stroke-width="2"/><rect x="1158" y="176" width="19" height="48" rx="3" fill="#173D65"/><circle cx="1167" cy="234" r="4" fill="#2D8A62"/></g>
+  <text x="1167" y="270" class="cn" font-size="15" text-anchor="middle" fill="#416A54">LCD</text>
+
+  <!-- Input: touch -> event node -> evdev -> LVGL -->
+  <g filter="url(#shadow)">
+    <rect x="55" y="255" width="90" height="95" rx="17" fill="#F2EEFC" stroke="#B9A8DC" stroke-width="2"/>
+    <text x="100" y="292" class="h" text-anchor="middle">触摸屏</text><text x="100" y="321" class="s" text-anchor="middle">按下・移动</text>
+    <rect x="185" y="255" width="180" height="95" rx="17" fill="#F2EEFC" stroke="#B9A8DC" stroke-width="2"/>
+    <text x="275" y="292" class="h" text-anchor="middle">Linux 输入节点</text><text x="275" y="321" class="c" text-anchor="middle">/dev/input/eventX</text>
+    <rect x="380" y="255" width="100" height="95" rx="17" fill="#FFF" stroke="#C8B9E6" stroke-width="2"/>
+    <text x="430" y="297" class="h" text-anchor="middle">evdev</text><text x="430" y="324" class="s" text-anchor="middle">后端</text>
+  </g>
+  <path d="M145 302H170" stroke="#7B62B5" stroke-width="4" marker-end="url(#purple)"/>
+  <path d="M365 302H370" stroke="#7B62B5" stroke-width="4" marker-end="url(#purple)"/>
+  <path d="M480 302H490" stroke="#7B62B5" stroke-width="4" marker-end="url(#purple)"/>
+
+  <!-- Time: monotonic clock -> tick -> LVGL -->
+  <g filter="url(#shadow)">
+    <rect x="55" y="385" width="180" height="70" rx="16" fill="#ECF8F1" stroke="#95CAAB" stroke-width="2"/>
+    <text x="145" y="414" class="h" text-anchor="middle">单调时间源</text><text x="145" y="440" class="s" text-anchor="middle">毫秒持续前进</text>
+    <rect x="280" y="385" width="170" height="70" rx="16" fill="#FFF" stroke="#A8D2B9" stroke-width="2"/>
+    <text x="365" y="414" class="h" text-anchor="middle">LVGL tick</text><text x="365" y="440" class="s" text-anchor="middle">只负责“报时”</text>
+  </g>
+  <path d="M235 420H265" stroke="#2D8A62" stroke-width="4" marker-end="url(#green)"/>
+  <path d="M450 420H490" stroke="#2D8A62" stroke-width="4" marker-end="url(#green)"/>
+
+  <!-- Handler: GUI loop -> handler -> LVGL -->
+  <g filter="url(#shadow)">
+    <rect x="55" y="475" width="180" height="70" rx="16" fill="#FFF5E8" stroke="#E2C28C" stroke-width="2"/>
+    <text x="145" y="504" class="h" text-anchor="middle">应用主循环</text><text x="145" y="530" class="s" text-anchor="middle">或 GUI 线程</text>
+    <rect x="280" y="475" width="200" height="70" rx="16" fill="#FFF" stroke="#E2C28C" stroke-width="2"/>
+    <text x="380" y="505" class="c" text-anchor="middle">lv_timer_handler()</text><text x="380" y="531" class="s" text-anchor="middle">处理“到期工作”</text>
+  </g>
+  <path d="M235 510H265" stroke="#C28A3B" stroke-width="4" marker-end="url(#orange)"/>
+  <path d="M480 510C520 510 475 430 500 420" fill="none" stroke="#C28A3B" stroke-width="4" marker-end="url(#orange)"/>
+
+  <rect x="790" y="490" width="350" height="48" rx="15" fill="#FFF0F0" stroke="#E2B6B6"/>
+  <text x="965" y="520" class="cn" font-size="16" text-anchor="middle" fill="#7A4141">节点存在 ≠ 链路正确：三条链要分别验收。</text>
+</svg>

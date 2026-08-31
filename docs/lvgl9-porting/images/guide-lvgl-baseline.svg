@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">LVGL 版本分析、固定与外部编译关系</title>
+  <desc id="desc">三个版本证据汇入课程基线，固定源码提交、配置、补丁和工具链，最终得到可复现的外部构建。</desc>
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FAFCFF"/><stop offset="1" stop-color="#F1F6FC"/></linearGradient>
+    <filter id="sh2" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#254C70" flood-opacity="0.13"/></filter>
+    <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6686AA"/></marker>
+    <style>.cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}.mono{font-family:Consolas,"SFMono-Regular",monospace}.h{font:700 22px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#173D65}.t{font:17px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#4E657C}.c{font:700 16px Consolas,"SFMono-Regular",monospace;fill:#28669E}</style>
+  </defs>
+  <rect width="1200" height="520" rx="28" fill="url(#bg2)"/>
+  <text x="55" y="60" class="cn" font-size="30" font-weight="700" fill="#153A62">版本号只是名字，完整基线才可以复现</text>
+  <text x="55" y="94" class="cn" font-size="18" fill="#60758C">先看清来源，再固定源码、配置、补丁和工具链。</text>
+
+  <g filter="url(#sh2)">
+    <rect x="55" y="140" width="260" height="80" rx="17" fill="#FFF" stroke="#BBD3EA" stroke-width="2"/>
+    <text x="185" y="174" class="h" text-anchor="middle">Tina 内置版本</text><text x="185" y="202" class="t" text-anchor="middle">以实际 SDK 调查为准</text>
+    <rect x="55" y="240" width="260" height="80" rx="17" fill="#FFF" stroke="#CDBEEB" stroke-width="2"/>
+    <text x="185" y="274" class="h" text-anchor="middle">EdgeOS 来源版本</text><text x="185" y="302" class="c" text-anchor="middle">release/v9.4 + patches</text>
+    <rect x="55" y="340" width="260" height="80" rx="17" fill="#FFF" stroke="#A9D4BB" stroke-width="2"/>
+    <text x="185" y="374" class="h" text-anchor="middle">LVGL 官方上游</text><text x="185" y="402" class="t" text-anchor="middle">API 与迁移依据</text>
+  </g>
+
+  <path d="M315 180C370 180 360 245 420 245M315 280H420M315 380C370 380 360 315 420 315" fill="none" stroke="#6686AA" stroke-width="4" marker-end="url(#ar2)"/>
+
+  <g filter="url(#sh2)">
+    <rect x="435" y="145" width="325" height="280" rx="22" fill="#EEF5FF" stroke="#97B9DD" stroke-width="2"/>
+    <text x="597" y="188" class="h" text-anchor="middle">课程 LVGL 9 基线</text>
+    <rect x="475" y="215" width="245" height="40" rx="11" fill="#FFF"/><text x="597" y="241" class="c" text-anchor="middle">tag / commit</text>
+    <rect x="475" y="268" width="245" height="40" rx="11" fill="#FFF"/><text x="597" y="294" class="c" text-anchor="middle">lv_conf.h</text>
+    <rect x="475" y="321" width="245" height="40" rx="11" fill="#FFF"/><text x="597" y="347" class="c" text-anchor="middle">patch list</text>
+    <rect x="475" y="374" width="245" height="40" rx="11" fill="#FFF"/><text x="597" y="400" class="c" text-anchor="middle">toolchain + sysroot</text>
+  </g>
+
+  <path d="M760 285H835" stroke="#6686AA" stroke-width="4" marker-end="url(#ar2)"/>
+
+  <g filter="url(#sh2)">
+    <rect x="850" y="170" width="295" height="230" rx="22" fill="#ECF8F1" stroke="#91CAA9" stroke-width="2"/>
+    <text x="997" y="215" class="h" text-anchor="middle">SDK 外独立验证</text>
+    <text x="890" y="260" class="cn" font-size="18" fill="#38634E">✓ 可以从干净目录重建</text>
+    <text x="890" y="302" class="cn" font-size="18" fill="#38634E">✓ ELF 架构匹配 V853</text>
+    <text x="890" y="344" class="cn" font-size="18" fill="#38634E">✓ 依赖来自目标 sysroot</text>
+    <text x="997" y="382" class="cn" font-size="16" text-anchor="middle" fill="#61746A">通过后再接显示、输入和 SDK</text>
+  </g>
+
+  <text x="600" y="474" class="cn" font-size="17" text-anchor="middle" fill="#7B5322">只记录“LVGL 9”不够：换一台机器仍能得到同样结果，才叫版本固定。</text>
+</svg>

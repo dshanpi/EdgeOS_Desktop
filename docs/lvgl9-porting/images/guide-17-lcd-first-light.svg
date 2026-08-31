@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">从编译成功到 LCD 显示画面</title>
+  <desc id="desc">ARM 程序生成后，还要复制到 V853、运行程序、连接 framebuffer 并持续刷新，LCD 才会出现画面。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7FAFF"/>
+      <stop offset="1" stop-color="#EFF8F3"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#244767" flood-opacity="0.13"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#6686AA"/>
+    </marker>
+    <style>
+      .cn{font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}
+      .h{font:700 20px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#183E67}
+      .s{font:15px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#60758C}
+      .code{font:700 15px Consolas,"SFMono-Regular",monospace;fill:#2463A9}
+    </style>
+  </defs>
+
+  <rect width="1200" height="560" rx="28" fill="url(#bg)"/>
+  <text x="55" y="58" class="cn" font-size="30" font-weight="700" fill="#153A62">从“能编译”到“LCD 有画面”</text>
+  <text x="55" y="94" class="cn" font-size="18" fill="#60758C">四个环节缺一不可；编译成功只是第一步。</text>
+
+  <path d="M245 275H280" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M470 275H505" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M695 275H730" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M920 275H960" stroke="#6686AA" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="55" y="195" width="190" height="160" rx="20" fill="#FFFFFF" stroke="#B8D2EC" stroke-width="2"/>
+    <circle cx="95" cy="235" r="22" fill="#2463A9"/>
+    <text x="95" y="243" class="cn" font-size="20" font-weight="700" text-anchor="middle" fill="#FFF">1</text>
+    <text x="150" y="243" class="h" text-anchor="middle">编译成功</text>
+    <text x="150" y="290" class="s" text-anchor="middle">Ubuntu 虚拟机中</text>
+    <text x="150" y="320" class="code" text-anchor="middle">v853_lvgl9</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="280" y="195" width="190" height="160" rx="20" fill="#FFFFFF" stroke="#CDBEEB" stroke-width="2"/>
+    <circle cx="320" cy="235" r="22" fill="#7154B3"/>
+    <text x="320" y="243" class="cn" font-size="20" font-weight="700" text-anchor="middle" fill="#FFF">2</text>
+    <text x="380" y="243" class="h" text-anchor="middle">复制到板子</text>
+    <text x="375" y="290" class="s" text-anchor="middle">把 ARM 程序传到</text>
+    <text x="375" y="320" class="code" text-anchor="middle">V853</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="505" y="195" width="190" height="160" rx="20" fill="#FFFFFF" stroke="#9DD2B4" stroke-width="2"/>
+    <circle cx="545" cy="235" r="22" fill="#23835A"/>
+    <text x="545" y="243" class="cn" font-size="20" font-weight="700" text-anchor="middle" fill="#FFF">3</text>
+    <text x="610" y="243" class="h" text-anchor="middle">连接 LCD</text>
+    <text x="600" y="290" class="s" text-anchor="middle">创建显示并绑定</text>
+    <text x="600" y="320" class="code" text-anchor="middle">/dev/fb0</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="730" y="195" width="190" height="160" rx="20" fill="#FFFFFF" stroke="#E5C48A" stroke-width="2"/>
+    <circle cx="770" cy="235" r="22" fill="#B77A17"/>
+    <text x="770" y="243" class="cn" font-size="20" font-weight="700" text-anchor="middle" fill="#FFF">4</text>
+    <text x="835" y="243" class="h" text-anchor="middle">持续刷新</text>
+    <text x="825" y="290" class="s" text-anchor="middle">创建测试界面并运行</text>
+    <text x="825" y="320" class="code" text-anchor="middle">lv_timer_handler()</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="960" y="145" width="190" height="260" rx="24" fill="#152840" stroke="#6D89A6" stroke-width="4"/>
+    <rect x="980" y="175" width="150" height="200" rx="8" fill="#2463A9"/>
+    <text x="1055" y="230" class="cn" font-size="18" font-weight="700" text-anchor="middle" fill="#FFF">LVGL 9</text>
+    <text x="1055" y="258" class="cn" font-size="16" text-anchor="middle" fill="#DDEBFA">V853 LCD OK</text>
+    <rect x="997" y="292" width="30" height="35" rx="4" fill="#E94B4B"/>
+    <rect x="1040" y="292" width="30" height="35" rx="4" fill="#35B56F"/>
+    <rect x="1083" y="292" width="30" height="35" rx="4" fill="#4C7EE8"/>
+    <text x="1055" y="397" class="s" text-anchor="middle">LCD 出现测试画面</text>
+  </g>
+
+  <rect x="220" y="465" width="760" height="50" rx="15" fill="#FFF0F0" stroke="#E5B4B4"/>
+  <text x="600" y="497" class="cn" font-size="18" text-anchor="middle" fill="#7B4141">程序只在虚拟机里编译成功时，开发板屏幕不会自动发生变化。</text>
+</svg>
