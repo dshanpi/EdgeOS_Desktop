@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">AI 辅助嵌入式 Linux UI 移植实战</title>
+  <desc id="desc">由芯片、终端光标和连接节点组成的课程标志</desc>
+  <defs>
+    <linearGradient id="chip" x1="9" y1="8" x2="55" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16a34a"/>
+      <stop offset="1" stop-color="#067533"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="18" y1="19" x2="48" y2="47" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffad73"/>
+      <stop offset="1" stop-color="#b7f7cb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#064e2b"/>
+  <path d="M22 12v7m10-7v7m10-7v7M22 45v7m10-7v7m10-7v7M12 22h7m-7 10h7m-7 10h7m26-20h7m-7 10h7m-7 10h7" stroke="#bbf7d0" stroke-width="3" stroke-linecap="round"/>
+  <rect x="18.5" y="18.5" width="27" height="27" rx="7.5" fill="url(#chip)" stroke="#dcfce7"/>
+  <path d="m25 27 5 5-5 5m8 0h6" fill="none" stroke="url(#signal)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="43" cy="21" r="2.5" fill="#ffad73"/>
+  <circle cx="43" cy="43" r="2.5" fill="#86efac"/>
+</svg>
