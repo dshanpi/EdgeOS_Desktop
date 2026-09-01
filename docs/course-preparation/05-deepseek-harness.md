@@ -48,20 +48,6 @@ npm config get registry
 | `npm --version` | 显示数字版本 |
 | Registry | `https://registry.npmjs.org/` |
 
-再确认课程固定版本确实存在：
-
-~~~bash
-npm view @deepseek-ai/dsh@0.1.1-rc.2 version
-~~~
-
-应输出：
-
-~~~text
-0.1.1-rc.2
-~~~
-
-若出现 404、超时或证书错误，先修复 npm 网络，不要把固定版本改成 `latest`。
-
 ## 2. 在终端 A 启动 Harness
 
 由于典型的 **Node.js 堆内存**的较小，DeepSeek的 Web 服务需要比较大的内存，所以需要增大Node.js 内存限制。
@@ -79,7 +65,7 @@ source ~/.bashrc
 
 ~~~bash
 DSH_PERMISSION_MODE=read-only \
-  npx --yes @deepseek-ai/dsh@0.1.1-rc.2 web --no-open
+  npx --yes @deepseek-ai/dsh web --no-open
 ~~~
 
 
