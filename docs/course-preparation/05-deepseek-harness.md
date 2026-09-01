@@ -68,6 +68,14 @@ DSH_PERMISSION_MODE=read-only \
   npx --yes @deepseek-ai/dsh web --no-open
 ~~~
 
+如果安装比较慢，也没有任何进度提示，可选择下面的方式进行全局安装：
+
+```
+npm install -g @deepseek-ai/dsh
+# 之后直接使用 dsh 命令启动
+DSH_PERMISSION_MODE=read-only dsh web --no-open
+```
+
 
 
 看到下面地址就表示服务已启动：
