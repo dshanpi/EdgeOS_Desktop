@@ -221,6 +221,50 @@ body {
   padding: clamp(0.25rem, 1vw, 0.75rem);
 }
 
+.course-screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.course-screenshot-card {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--course-border);
+  border-radius: 0.85rem;
+  background: var(--ifm-background-surface-color);
+  box-shadow: var(--course-shadow);
+}
+
+.theme-doc-markdown .course-screenshot-card img {
+  width: 100%;
+  max-height: none;
+  aspect-ratio: 4 / 3;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
+  box-shadow: none;
+}
+
+.course-screenshot-card figcaption {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.75rem 0.9rem 0.9rem;
+  line-height: 1.5;
+}
+
+.course-screenshot-card figcaption strong {
+  color: var(--ifm-heading-color);
+  font-size: 1rem;
+}
+
+.course-screenshot-card figcaption span {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.88rem;
+}
+
 /* Commands and source snippets */
 .theme-code-block {
   margin: 1.35rem 0;
@@ -325,6 +369,10 @@ body {
 }
 
 @media (max-width: 576px) {
+  .course-screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+
   .theme-doc-markdown h2 {
     margin-top: 2.55rem;
     font-size: 1.4rem;
