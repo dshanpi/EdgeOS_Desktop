@@ -64,13 +64,25 @@ npm view @deepseek-ai/dsh@0.1.1-rc.2 version
 
 ## 2. 在终端 A 启动 Harness
 
+由于典型的 **Node.js 堆内存**的较小，DeepSeek的 Web 服务需要比较大的内存，所以需要增大Node.js 内存限制。
+
+```
+# 临时增大 Node.js 内存限制
+NODE_OPTIONS="--max-old-space-size=4096"
+
+# 持久化设置
+echo 'export NODE_OPTIONS="--max-old-space-size=4096"' >> ~/.bashrc
+source ~/.bashrc
+```
+
 执行后，这个窗口会一直运行，这是正常现象：
 
 ~~~bash
-cd "$HOME/100ask-course/projects/agent-sandbox"
 DSH_PERMISSION_MODE=read-only \
   npx --yes @deepseek-ai/dsh@0.1.1-rc.2 web --no-open
 ~~~
+
+
 
 看到下面地址就表示服务已启动：
 
@@ -86,6 +98,8 @@ http://127.0.0.1:3080
 | `--no-open` | 不自动开浏览器，由我们手动打开 |
 
 > 终端 A 没有返回 `$` 并不是卡死，它正在运行服务。浏览器使用期间不要关闭它。
+
+
 
 ## 3. 在 Ubuntu 浏览器打开页面
 
