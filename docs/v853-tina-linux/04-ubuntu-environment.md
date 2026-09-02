@@ -200,6 +200,75 @@ dpkg -s libselinux1 libpopt0 libc6:i386 \
 
 依次能看到 GCC、GNU Make、Python 3、`i386` 和 `打包工具运行库：OK`，环境就准备好了。
 
+### 7. 安装中文输入法
+
+为了方便后续输入中文，可以在 Ubuntu 24.04 中安装 IBus 智能拼音输入法。本步骤只添加中文输入功能，不会修改系统的显示语言。
+
+#### 7.1 安装输入法和中文语言包
+
+打开终端，更新软件包索引并安装 IBus 智能拼音及简体中文语言包：
+
+~~~bash
+sudo apt update
+sudo apt install -y ibus-libpinyin language-pack-zh-hans
+~~~
+
+命令执行完成且没有出现 `E:` 开头的错误，说明所需软件包已经安装成功。
+
+#### 7.2 启用 IBus
+
+将 IBus 设置为当前系统的输入法框架：
+
+~~~bash
+im-config -n ibus
+~~~
+
+然后重新启动 IBus，使配置在当前桌面会话中生效：
+
+~~~bash
+ibus-daemon -drx
+~~~
+
+以上命令执行后没有输出是正常现象。
+
+#### 7.3 检查智能拼音是否可用
+
+执行下面的命令，查询 IBus 已识别的智能拼音输入法：
+
+~~~bash
+ibus list-engine | grep -i "Intelligent Pinyin"
+~~~
+
+如果终端中显示包含 `Intelligent Pinyin` 的结果，说明输入法引擎已经安装并被 IBus 正确识别。如果没有任何输出，请先重启 Ubuntu，再重新执行该命令。
+
+#### 7.4 添加中文输入源
+
+打开 **Settings（设置）→ System（系统）→ Region & Language（区域与语言）**，然后点击 **Manage Installed Languages（管理已安装的语言）**。
+
+![在区域与语言设置中打开语言管理窗口](images/image-20260902114513460.png)
+
+点击 **Install/Remove Languages（安装/删除语言）**，找到并安装 **Chinese (simplified)（简体中文）**。
+
+![安装简体中文语言支持](images/image-20260902114635001.png)
+
+返回设置页面，在 **Keyboard（键盘）** 的输入源区域点击 **+ Add Input Source（添加输入源）**。
+
+![在键盘设置中添加输入源](images/image-20260902114856544.png)
+
+依次选择 **Chinese（中文）→ Chinese (Intelligent Pinyin)（中文·智能拼音）**，完成输入法添加。
+
+![选择中文智能拼音输入法](images/image-20260902115045695.png)
+
+#### 7.5 切换并测试输入法
+
+点击桌面右上角的语言标识（例如 `en`），选择 **Chinese (Intelligent Pinyin)**，即可切换到中文输入法。也可以使用 `Super + Space` 快捷键在已添加的输入源之间切换。
+
+![从桌面状态栏切换中文输入法](images/image-20260902115152773.png)
+
+打开文本编辑器，尝试输入一段中文。能够正常显示候选词并完成中文输入，即表示配置成功。
+
+![使用智能拼音输入中文](images/image-20260902115322395.png)
+
 ## 验收标准
 
 - [ ] 三个资料虚拟机分卷完整，并成功打开 Ubuntu 18.04。
