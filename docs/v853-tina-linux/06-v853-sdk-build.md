@@ -330,15 +330,14 @@ firmware_status=$?
 printf 'FIRMWARE_CHECK_EXIT_CODE=%s\n' "$firmware_status"
 ~~~
 
-看到 `FIRMWARE_CHECK_EXIT_CODE=0`，再记录文件大小、修改时间和 SHA-256：
+看到 `FIRMWARE_CHECK_EXIT_CODE=0`，再记录文件大小和修改时间：
 
 ~~~bash
 firmware='out/v853-100ask/tina_v853-100ask_uart0.img'
 ls -lh --time-style=long-iso "$firmware"
-sha256sum "$firmware"
 ~~~
 
-确认修改时间属于本次打包，并保存最后一行 SHA-256 校验值。
+确认文件非空、修改时间属于本次打包，并保留打包日志。
 
 > 旧固件可能仍留在 `out/` 中。因此，即使看到了 `.img` 文件，只要本次 `PACK_EXIT_CODE` 不是 `0`，仍然算打包失败。
 
@@ -357,12 +356,12 @@ sha256sum "$firmware"
 5. 只将当前 SDK 内已经存在的 local_cc_wrap/bin、local_python2/bin、local_gperf/bin 加入 PATH；
 6. 确认 out/v853-100ask/boot.img 和 out/v853-100ask/rootfs.img 存在且大小不为 0；
 7. pack 只运行一次，结束后立即保存并打印 PACK_EXIT_CODE；
-8. 退出码为 0 时，检查 out/v853-100ask/tina_v853-100ask_uart0.img 是否非空，并输出大小、修改时间和 sha256sum。
+8. 退出码为 0 时，检查 out/v853-100ask/tina_v853-100ask_uart0.img 是否非空，并输出大小和修改时间。
 
 禁止 sudo、apt、联网下载、clean、rm、修改 SDK 源码或系统文件，也不要烧录。
 任何检查或 pack 失败时立即停止，不要自动修复；只报告第一条有效错误及附近日志，等待我决定。
 
-最后按“配置、退出码、固件、SHA-256、结论”汇总。
+最后按“配置、退出码、固件路径与大小、结论”汇总。
 ~~~
 
 Agent 请求执行权限时，只批准与上面步骤一致的命令。打包完成后，把工作区切回 **Read Only**。
@@ -401,7 +400,7 @@ out/v853-100ask/tina_v853-100ask_uart0.img
 - [ ] `MAKE_EXIT_CODE=0`。
 - [ ] `boot.img` 和 `rootfs.img` 都存在且大小不为 `0`。
 - [ ] `PACK_EXIT_CODE=0`，完整固件存在且大小不为 `0`。
-- [ ] 已记录完整固件的修改时间和 SHA-256。
+- [ ] 已记录完整固件的路径、大小和修改时间。
 - [ ] 使用 Agent 时，已核对提示词要求的汇总并把权限切回 `Read Only`。
 - [ ] 使用本地兼容工具时，已记录再次编译所需的 `PATH`。
 

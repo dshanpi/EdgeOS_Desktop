@@ -62,7 +62,7 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Part 3 · EdgeOS V853 移植',
+      label: 'Part 3 · EdgeOS V853 移植（预览）',
       collapsed: true,
       link: {
         type: 'doc',
@@ -72,8 +72,6 @@ const sidebars = {
         'edgeos-v853-porting/edgeos-desktop-ui',
         'edgeos-v853-porting/edgeos-settings',
         'edgeos-v853-porting/edgeos-settings-services',
-        'edgeos-v853-porting/edgeos-camera',
-        'edgeos-v853-porting/edgeos-gallery',
       ],
     },
   ],

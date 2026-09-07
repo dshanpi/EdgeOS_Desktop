@@ -89,14 +89,12 @@ tina-v853-100ask.tar.gz
 ~~~bash
 cd "$HOME"
 stat --printf='size=%s bytes\n' tina-v853-100ask.tar.gz
-sha256sum tina-v853-100ask.tar.gz
 ~~~
 
 本课程当前文件应为：
 
 ~~~text
 size=5577565765 bytes
-2233220e050ddbfd2cca53667146bc5cf65afe18f35e31a4ace6c8fea93ca33a
 ~~~
 
 在 Windows 新建一个容易找到的中转目录，例如 `F:\V853-SDK-transfer`。把 `tina-v853-100ask.tar.gz` 从 Ubuntu 窗口拖到该目录，等待复制进度完全结束。
@@ -132,18 +130,16 @@ nautilus "$SDK_DIR" >/dev/null 2>&1 &
 
 ~~~bash
 cd "$HOME/100ask-course/sdk"
-printf '%s  %s\n' \
-  '2233220e050ddbfd2cca53667146bc5cf65afe18f35e31a4ace6c8fea93ca33a' \
-  'tina-v853-100ask.tar.gz' | sha256sum --check
+gzip -t tina-v853-100ask.tar.gz && echo "压缩包检查通过"
 ~~~
 
 正确结果是：
 
 ~~~text
-tina-v853-100ask.tar.gz: OK
+压缩包检查通过
 ~~~
 
-确认显示 `OK` 后再解压：
+确认显示“压缩包检查通过”后再解压：
 
 ~~~bash
 tar -xzf tina-v853-100ask.tar.gz
@@ -273,7 +269,7 @@ ibus list-engine | grep -i "Intelligent Pinyin"
 
 - [ ] 三个资料虚拟机分卷完整，并成功打开 Ubuntu 18.04。
 - [ ] Windows 中转目录中已有 `tina-v853-100ask.tar.gz`。
-- [ ] Ubuntu 24.04 的 SHA-256 校验显示 `OK`。
+- [ ] Ubuntu 24.04 上压缩包复制完成，`gzip -t` 检查通过。
 - [ ] 解压后显示 `SDK 解压成功`。
 - [ ] SDK 最终位于 `~/100ask-course/sdk/tina-v853-100ask`。
 - [ ] GCC、GNU Make、Python 3 和打包工具运行库检查通过。
@@ -285,7 +281,7 @@ ibus list-engine | grep -i "Intelligent Pinyin"
 | 7-Zip 无法打开 | 三个分卷是否同目录、编号连续，是否从 `.001` 开始 |
 | `.vmx` 打不开 | 是否已完整解压，并使用 VMware Workstation 打开 |
 | 文件拖不进虚拟机 | 是否完成 Part0 的 Xorg 与 VMware Tools 配置 |
-| SHA-256 不是 `OK` | 不要解压；重新从旧虚拟机复制 |
+| 压缩包检查失败 | 不要解压；确认复制完成，必要时从旧虚拟机重新复制 |
 | 解压提示空间不足 | 用 `df -h "$HOME"` 检查 Ubuntu 24.04 可用空间 |
 | SDK 目录属于 `root` | 不要使用 `sudo tar`，不要对整个 SDK 执行 `chmod -R 777` |
 | 找不到 `git-core`、`libncurses5-dev` 或 `lib32ncurses5` | 使用本节的 Ubuntu 24.04 新命令，不要混用旧清单 |

@@ -27,9 +27,17 @@ const stages = [
     tone: 'teal',
   },
   {
+    number: '23–31',
+    title: 'EdgeOS V853 移植',
+    description: '从核心桌面 UI 开始，适配 Settings 设置中心、横竖屏布局、触摸导航与 Tina 软件包。',
+    href: '/docs/edgeos-v853-porting',
+    tone: 'slate',
+    status: '预览开放',
+  },
+  {
     number: 'NEXT',
     title: '多平台与进阶专题',
-    description: 'EdgeOS、V851s/V821/V861、Camera、MPP 与 NPU。',
+    description: 'V851s/V821/V861、Camera、MPP、NPU 与 OTA。',
     tone: 'slate',
   },
 ];
@@ -48,7 +56,7 @@ function StageCard({stage}) {
           {stage.number}
         </span>
         <span className={styles.stageStatus}>
-          {stage.href ? '已开放' : '规划中'}
+          {stage.status ?? (stage.href ? '已开放' : '规划中')}
         </span>
       </div>
       <h3>{stage.title}</h3>
@@ -99,7 +107,7 @@ export default function Home() {
             </div>
             <dl className={styles.heroStats}>
               <div>
-                <dt>20</dt>
+                <dt>22</dt>
                 <dd>篇课程文档</dd>
               </div>
               <div>
@@ -107,7 +115,7 @@ export default function Home() {
                 <dd>张流程图与截图</dd>
               </div>
               <div>
-                <dt>3</dt>
+                <dt>4</dt>
                 <dd>个已开放阶段</dd>
               </div>
             </dl>
