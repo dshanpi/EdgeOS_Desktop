@@ -38,6 +38,7 @@ const sidebars = {
         'v853-tina-linux/tina-sdk-overview',
         'v853-tina-linux/v853-sdk-build',
         'v853-tina-linux/firmware-flashing',
+        'v853-tina-linux/LCDScreenAdaptation',
         'v853-tina-linux/peripheral-validation',
       ],
     },

@@ -201,6 +201,18 @@ export const learningRoadmaps = {
         warning: '源资料中的 AI Agent 烧录与完整验收步骤仍待补充。',
       }),
       chapter({
+        id: 'lcd-adaptation',
+        number: '09',
+        title: '使用 AI Agent 适配 LCD 与触摸（可选）',
+        shortTitle: 'LCD 适配',
+        docId: 'v853-tina-linux/LCDScreenAdaptation',
+        description: '比对屏幕适配包与 SDK，接入面板驱动、设备树和触摸配置。',
+        outcome: '完成受控修改与固件打包，并在开发板验证显示、触摸和方向。',
+        evidence: ['源码差异', '构建结果', '实机显示与触摸'],
+        warning: '更换屏幕时按需学习；插拔屏幕与触摸排线前必须断电。',
+        prerequisites: ['sdk-build', 'firmware-flashing'],
+      }),
+      chapter({
         id: 'peripheral-validation',
         number: '10',
         title: '外设验证',
